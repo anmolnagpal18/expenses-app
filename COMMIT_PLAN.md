@@ -17,7 +17,8 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 - [x] `test(auth): authentication API test coverage`
 - [x] `feat(groups): implement group and membership models`
 - [x] `test(groups): membership validation coverage`
-- [ ] `feat(groups): group management APIs and serializers`
+- [x] `feat(groups): group management APIs and serializers`
+- [x] `test(groups): API coverage for group endpoints`
 - [ ] `feat: implement seed command for default users and exchange rate fixtures`
 
 ### Phase 3: Expense Split & Settlement Engines

@@ -60,6 +60,12 @@ class Membership(models.Model):
             return self.joined_at <= now <= self.left_at
         return self.joined_at <= now
 
+    @property
+    def membership_duration(self):
+        end = self.left_at if self.left_at else timezone.now()
+        duration = end - self.joined_at
+        return max(0, duration.days)
+
     def clean(self):
         # 1. Validate left_at > joined_at
         if self.left_at and self.left_at <= self.joined_at:

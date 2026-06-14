@@ -12,18 +12,47 @@ class GroupService:
         Creates a new group and automatically registers the creator 
         as the initial OWNER membership.
         """
-        # Skeleton: Implementation will be added in APIs commit
-        pass
+        group = Group.objects.create(
+            name=name,
+            base_currency=base_currency,
+            created_by=creator_user
+        )
+        Membership.objects.create(
+            group=group,
+            user=creator_user,
+            role='OWNER',
+            joined_at=group.created_at or timezone.now()
+        )
+        return group
 
 class MembershipService:
     @staticmethod
-    def add_member(group_id, user_id, role, joined_at, left_at=None):
+    def add_member(group_id, user_id, role, joined_at, left_at=None, membership_source='MANUAL'):
         """
         Registers a membership period for a user in a group.
         Performs timeline order and overlap checks.
         """
-        # Skeleton: Implementation will be added in APIs commit
-        pass
+        group = GroupRepository.get_by_id(group_id)
+        if not group:
+            raise ValidationError("Group does not exist.")
+            
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            raise ValidationError("User does not exist.")
+
+        membership = Membership(
+            group=group,
+            user=user,
+            role=role,
+            joined_at=joined_at,
+            left_at=left_at
+        )
+        # This will call membership.clean() and validate overlapping, left_at, etc.
+        membership.save()
+        return membership
 
     @staticmethod
     def set_member_left_date(membership_id, left_at):
@@ -31,13 +60,21 @@ class MembershipService:
         Caps a membership period by setting left_at, marking the user inactive
         for future expenses while retaining historical balance references.
         """
-        # Skeleton: Implementation will be added in APIs commit
-        pass
+        membership = MembershipRepository.get_by_id(membership_id)
+        if not membership:
+            raise ValidationError("Membership does not exist.")
+        membership.left_at = left_at
+        membership.save()
+        return membership
 
     @staticmethod
     def change_member_role(membership_id, new_role):
         """
         Modifies a user's role. Enforces ownership count validations.
         """
-        # Skeleton: Implementation will be added in APIs commit
-        pass
+        membership = MembershipRepository.get_by_id(membership_id)
+        if not membership:
+            raise ValidationError("Membership does not exist.")
+        membership.role = new_role
+        membership.save()
+        return membership
