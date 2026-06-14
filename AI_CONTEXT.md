@@ -175,7 +175,153 @@ A Shared Expense Management Application similar to Splitwise, developed as a Sof
 ---
 
 ## 3. Architecture & Technical Decisions
-*To be detailed after we complete the requirements interview.*
+
+### Tech Stack Layers (Backend)
+- **Django REST Framework (DRF)**
+- **Architecture Pattern:** Controller (API Views/Serializers) → Service Layer (Business Logic / Validations) → Repository Layer (Querying Database) → Database (PostgreSQL).
+- **Core Benefit:** Complete separation of business rules (e.g. split engine, dynamic membership checks) from API endpoints. Highly testable.
+
+### Tech Stack (Frontend)
+- **React + Vite + Tailwind CSS**
+- **Libraries:**
+  - `React Router` (Routing)
+  - `TanStack Query` (State & caching of API requests)
+  - `Axios` (HTTP client)
+  - `React Hook Form` (Form state & validation)
+
+### Database Schema (Relational Tables)
+
+#### `User`
+- Standard Django auth User fields.
+
+#### `Group`
+- `id` (UUID)
+- `name` (String)
+- `base_currency` (String, default 'INR')
+- `created_at` (Timestamp)
+
+#### `Membership`
+- `id` (UUID)
+- `group_id` (FK → Group)
+- `user_id` (FK → User)
+- `joined_at` (Timestamp)
+- `left_at` (Timestamp, nullable)
+
+#### `StaticExchangeRate`
+- `id` (Integer)
+- `from_currency` (String, e.g. 'USD')
+- `to_currency` (String, e.g. 'INR')
+- `rate` (Decimal)
+
+#### `Expense`
+- `id` (UUID)
+- `group_id` (FK → Group)
+- `description` (String)
+- `date` (Date)
+- `original_amount` (Decimal)
+- `converted_amount` (Decimal)
+- `currency` (String)
+- `exchange_rate` (Decimal)
+- `split_type` (String: 'equal', 'percentage', 'exact', 'shares')
+- `created_at` (Timestamp)
+
+#### `ExpenseContribution`
+- `id` (UUID)
+- `expense_id` (FK → Expense)
+- `user_id` (FK → User)
+- `amount_paid` (Decimal)
+
+#### `ExpenseSplit`
+- `id` (UUID)
+- `expense_id` (FK → Expense)
+- `user_id` (FK → User)
+- `share_value` (Decimal) -- e.g., percentage, share ratio, or exact amount
+- `amount_owed` (Decimal)
+
+#### `Settlement`
+- `id` (UUID)
+- `group_id` (FK → Group)
+- `from_user_id` (FK → User)
+- `to_user_id` (FK → User)
+- `original_amount` (Decimal)
+- `converted_amount` (Decimal)
+- `currency` (String)
+- `exchange_rate` (Decimal)
+- `settlement_date` (Date)
+
+#### `ImportBatch`
+- `id` (UUID)
+- `group_id` (FK → Group)
+- `uploaded_by` (FK → User)
+- `status` (String: 'pending_review', 'completed', 'failed')
+- `created_at` (Timestamp)
+
+#### `ImportRow`
+- `id` (UUID)
+- `batch_id` (FK → ImportBatch)
+- `row_index` (Integer)
+- `raw_data` (JSON)
+- `status` (String: 'pending', 'resolved', 'ignored')
+
+#### `ImportAnomaly`
+- `id` (UUID)
+- `row_id` (FK → ImportRow)
+- `anomaly_type` (String)
+- `severity` (String: 'high', 'medium', 'low')
+- `message` (Text)
+- `suggested_action` (String)
+
+#### `ImportResolution`
+- `id` (UUID)
+- `row_id` (FK → ImportRow)
+- `action_taken` (String)
+- `resolved_by` (FK → User)
+- `timestamp` (Timestamp)
+
+#### `AuditLog`
+- `id` (UUID)
+- `actor` (FK → User)
+- `event_type` (String)
+- `entity_type` (String)
+- `entity_id` (UUID)
+- `old_value` (JSON, nullable)
+- `new_value` (JSON, nullable)
+- `timestamp` (Timestamp)
+
+---
+
+### Authentication Strategy
+- **JWT Storage:** Tokens are stored in frontend `localStorage`.
+- **JWT Lifetimes:** 
+  - Access Token: 15 minutes
+  - Refresh Token: 7 days
+- **Registration:** Fully supported login and signup workflows.
+
+---
+
+### Balance Calculation (Option A: Direct Bilateral Balances)
+- **Debt Simplification:** NOT used. Direct peer-to-peer calculations are done to maintain full traceability.
+- **Calculation Formula:**
+  - For any two users A and B in group G:
+    - User A's net balance with User B is calculated as:
+      `Sum(A's contributions split with B) - Sum(B's contributions split with A) + Sum(Settlements from B to A) - Sum(Settlements from A to B)`
+  - **Membership boundaries:** Sums only run over periods where they both had active membership.
+- **Traceability:** Every calculated balance must links directly to the detailed underlying transactions.
+
+---
+
+### Currency Conversion
+- **Group Base Currency:** Groups declare a base currency (e.g. INR). 
+- **Conversion at Entry:** Expenses added in non-base currency (e.g. USD) are converted to the base currency using a static database registry (`StaticExchangeRate`) at the time of creation.
+- **Rate Retention:** Once an expense is saved, its rate and converted amount are frozen.
+
+---
+
+### Seed Command Configuration
+- A Django admin seed command creates the default users:
+  - Aisha, Rohan, Priya, Meera, Sam, Dev
+  - Password: `Password@123`
+  - Seed baseline static conversion rates (USD/EUR/GBP to INR).
 
 ---
 
