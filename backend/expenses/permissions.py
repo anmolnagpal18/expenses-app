@@ -31,5 +31,13 @@ class IsGroupMember(permissions.BasePermission):
             if not group_id:
                 return False
 
+        # If the group does not exist, let serializer/service handle the validation error (400 Bad Request)
+        from groups.models import Group
+        try:
+            if not Group.objects.filter(pk=group_id).exists():
+                return True
+        except (ValueError, ValidationError):
+            return True
+
         membership = MembershipRepository.get_active_membership_at(group_id, request.user.id, timezone.now())
         return membership is not None and membership.role in ('OWNER', 'ADMIN', 'MEMBER')

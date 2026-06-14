@@ -178,6 +178,15 @@ class SettlementService:
         except User.DoesNotExist:
             raise ValidationError("Payee does not exist.")
             
+        # Service-layer validation: check both users belong to the group
+        from groups.repositories import MembershipRepository
+        from_memberships = MembershipRepository.get_user_membership_in_group(group.id, from_user.id)
+        to_memberships = MembershipRepository.get_user_membership_in_group(group.id, to_user.id)
+        if not from_memberships.exists():
+            raise ValidationError(f"Payer ({from_user.email}) must be a member of the group (historical or active).")
+        if not to_memberships.exists():
+            raise ValidationError(f"Payee ({to_user.email}) must be a member of the group (historical or active).")
+            
         original_decimal = Decimal(str(original_amount))
         
         # 1. Resolve exchange rate and converted amount
