@@ -40,7 +40,7 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 - [x] `feat(imports): staging import models`
 - [x] `test(imports): staging model coverage`
 - [x] `feat(imports): CSV upload and parser`
-- [ ] `test(imports): parser coverage`
+- [x] `test(imports): parser coverage`
 - [ ] `feat(imports): anomaly detection engine`
 - [ ] `test(imports): anomaly detection coverage`
 

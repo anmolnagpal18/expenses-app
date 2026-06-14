@@ -6,8 +6,8 @@ from decimal import Decimal
 import uuid
 
 from groups.models import Group
-from .models import ImportBatch, ImportRow, ImportAnomaly, ImportResolution
-from .repositories import (
+from imports.models import ImportBatch, ImportRow, ImportAnomaly, ImportResolution
+from imports.repositories import (
     ImportBatchRepository,
     ImportRowRepository,
     ImportAnomalyRepository,

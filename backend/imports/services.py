@@ -10,10 +10,10 @@ class CSVImportService:
         "description": ["description", "expense", "title"],
         "amount": ["amount", "value"],
         "currency": ["currency"],
-        "paid_by": ["paid_by", "payer"],
+        "paid_by": ["paid_by", "paid by", "payer"],
         "participants": ["participants", "split_between"],
-        "split_type": ["split_type", "type", "split_strategy"],
-        "split_values": ["split_values", "shares", "percentages", "values", "split_value"],
+        "split_type": ["split_type", "split type", "type", "split_strategy"],
+        "split_values": ["split_values", "split values", "shares", "percentages", "values", "split_value"],
         "notes": ["notes", "comment", "memo"]
     }
 
@@ -47,7 +47,7 @@ class CSVImportService:
         missing_required = []
         header_mapping = {}
 
-        for standard_name, aliases in CSV_SCHEMA.items():
+        for standard_name, aliases in CSVImportService.CSV_SCHEMA.items():
             matched_header = None
             for alias in aliases:
                 if alias in fieldnames:
