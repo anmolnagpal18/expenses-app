@@ -12,7 +12,7 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 - [x] `docs: finalize SCOPE.md, DECISIONS.md, AI_USAGE.md, README.md`
 
 ### Phase 2: Django Backend Foundation
-- [ ] `chore: initialize django project structure and postgres config`
+- [x] `chore: initialize django project structure and postgres config`
 - [ ] `feat(users): add custom user model`
 - [ ] `feat: implement user registration, login, and JWT endpoints`
 - [ ] `feat: implement group and membership model with join/leave validations`
