@@ -466,3 +466,11 @@ class ExpenseAPITests(APITestCase):
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
             self.assertEqual(response.data['detail'], 'Fallback error')
 
+        # Mock create_expense to raise ValidationError with message_dict
+        with patch('expenses.services.ExpenseService.create_expense') as mock_create:
+            mock_create.side_effect = DjangoValidationError(message={'field_name': ['Field error']})
+            response = self.client.post(self.create_url, payload, format='json')
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(response.data['field_name'], ['Field error'])
+
+

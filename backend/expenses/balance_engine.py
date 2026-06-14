@@ -95,8 +95,10 @@ class BalanceEngine:
                         "settlements": []
                     }
 
-        # Track total raw debts: debts[(u1, u2)] = amount u1 owes u2
-        debts = defaultdict(Decimal)
+        # Track total raw debts from expenses: debts_expense[(u1, u2)] = amount u1 owes u2
+        debts_expense = defaultdict(Decimal)
+        # Track total raw settlements: debts_settlement[(u1, u2)] = amount u1 settled to u2
+        debts_settlement = defaultdict(Decimal)
 
         # 3. Calculate expense splits
         for exp in expenses:
@@ -143,7 +145,7 @@ class BalanceEngine:
                 # Accumulate split debts
                 for j_id, debt_amt in participant_allocations.items():
                     if i != j_id and debt_amt > 0:
-                        debts[(i, j_id)] += debt_amt
+                        debts_expense[(i, j_id)] += debt_amt
                         # Log to initial one-way explanation map
                         self.explanation_map[(i, j_id)]["expenses"].append({
                             "expense_id": exp.id,
@@ -160,7 +162,7 @@ class BalanceEngine:
             to_u = setl.to_user_id
             amt = setl.converted_amount
 
-            debts[(from_u, to_u)] -= amt
+            debts_settlement[(from_u, to_u)] += amt
 
             # Log to initial one-way explanation map
             self.explanation_map[(from_u, to_u)]["settlements"].append({
@@ -179,10 +181,24 @@ class BalanceEngine:
                 u1 = user_ids_list[i]
                 u2 = user_ids_list[j]
 
-                gross_1_to_2 = debts[(u1, u2)]
-                gross_2_to_1 = debts[(u2, u1)]
+                # Gross expense debts
+                gross_exp_1_to_2 = debts_expense[(u1, u2)]
+                gross_exp_2_to_1 = debts_expense[(u2, u1)]
+                net_exp_1_to_2 = gross_exp_1_to_2 - gross_exp_2_to_1
 
-                net_1_to_2 = gross_1_to_2 - gross_2_to_1
+                # Gross settlements
+                gross_set_1_to_2 = debts_settlement[(u1, u2)]
+                gross_set_2_to_1 = debts_settlement[(u2, u1)]
+                net_set_1_to_2 = gross_set_1_to_2 - gross_set_2_to_1
+
+                # Calculate final net debt enforcing "settlement cannot reverse debt direction"
+                if net_exp_1_to_2 > 0:
+                    net_1_to_2 = max(Decimal('0.00'), net_exp_1_to_2 - net_set_1_to_2)
+                elif net_exp_1_to_2 < 0:
+                    net_2_to_1 = max(Decimal('0.00'), -net_exp_1_to_2 + net_set_1_to_2)
+                    net_1_to_2 = -net_2_to_1
+                else:
+                    net_1_to_2 = Decimal('0.00')
 
                 if net_1_to_2 > 0:
                     self.balances.append({
@@ -215,10 +231,6 @@ class BalanceEngine:
                     negated_s["amount"] = -s["amount"]
                     setl_breakdown_1_to_2.append(negated_s)
 
-                self.explanation_map[(u1, u2)]["amount"] = net_1_to_2
-                self.explanation_map[(u1, u2)]["expenses"] = exp_breakdown_1_to_2
-                self.explanation_map[(u1, u2)]["settlements"] = setl_breakdown_1_to_2
-
                 # perspective: u2 to u1
                 exp_breakdown_2_to_1 = []
                 for e in self.explanation_map[(u2, u1)]["expenses"]:
@@ -235,6 +247,11 @@ class BalanceEngine:
                     negated_s = s.copy()
                     negated_s["amount"] = -s["amount"]
                     setl_breakdown_2_to_1.append(negated_s)
+
+                # Overwrite after both perspectives are calculated
+                self.explanation_map[(u1, u2)]["amount"] = net_1_to_2
+                self.explanation_map[(u1, u2)]["expenses"] = exp_breakdown_1_to_2
+                self.explanation_map[(u1, u2)]["settlements"] = setl_breakdown_1_to_2
 
                 self.explanation_map[(u2, u1)]["amount"] = -net_1_to_2
                 self.explanation_map[(u2, u1)]["expenses"] = exp_breakdown_2_to_1
