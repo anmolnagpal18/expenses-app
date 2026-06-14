@@ -13,6 +13,32 @@ from .permissions import IsGroupMember
 class CreateSettlementView(APIView):
     permission_classes = [IsAuthenticated, IsGroupMember]
 
+    def get(self, request):
+        group_id = request.query_params.get('group_id')
+        if not group_id:
+            return Response({"detail": "group_id query parameter is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check active membership
+        from groups.models import Membership
+        is_member = Membership.objects.filter(
+            group_id=group_id,
+            user=request.user,
+            left_at__isnull=True
+        ).exists()
+        if not is_member:
+            return Response({"detail": "You do not have access to this group's settlements."}, status=status.HTTP_403_FORBIDDEN)
+
+        settlements = Settlement.objects.filter(
+            group_id=group_id,
+            is_deleted=False
+        ).select_related(
+            'from_user',
+            'to_user',
+            'group'
+        )
+        serializer = SettlementSerializer(settlements, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     def post(self, request):
         serializer = CreateSettlementSerializer(data=request.data)
         if serializer.is_valid():

@@ -302,3 +302,85 @@ class GroupAPITests(APITestCase):
         class DummyViewNoKwargs:
             kwargs = {}
         self.assertFalse(permission.has_permission(request, DummyViewNoKwargs()))
+
+    def test_group_balances_and_explanations_api(self):
+        from expenses.models import Expense, ExpenseContribution, ExpenseSplit
+        from decimal import Decimal
+
+        # Create an expense in the group
+        # Owner pays 90.00, split EQUAL among owner, admin, and member (30.00 each)
+        expense = Expense.objects.create(
+            group=self.group,
+            description='Group Dinner',
+            date=timezone.now(),
+            original_amount=Decimal('90.00'),
+            converted_amount=Decimal('90.00'),
+            currency='INR',
+            exchange_rate=Decimal('1.0000'),
+            split_type='equal',
+            created_by=self.owner_user
+        )
+        ExpenseContribution.objects.create(
+            expense=expense,
+            user=self.owner_user,
+            amount_paid=Decimal('90.00')
+        )
+        ExpenseSplit.objects.create(
+            expense=expense,
+            user=self.owner_user,
+            amount_owed=Decimal('30.00'),
+            share_value=Decimal('1.00')
+        )
+        ExpenseSplit.objects.create(
+            expense=expense,
+            user=self.admin_user,
+            amount_owed=Decimal('30.00'),
+            share_value=Decimal('1.00')
+        )
+        ExpenseSplit.objects.create(
+            expense=expense,
+            user=self.member_user,
+            amount_owed=Decimal('30.00'),
+            share_value=Decimal('1.00')
+        )
+
+        # 1. Test group balances endpoint
+        self.client.force_authenticate(user=self.member_user)
+        balances_url = reverse('group-balances', kwargs={'id': self.group.id})
+        response = self.client.get(balances_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify member and admin owe owner 30
+        self.assertEqual(len(response.data), 2)
+        admin_debt = next(b for b in response.data if b["from_user"]["id"] == str(self.admin_user.id))
+        member_debt = next(b for b in response.data if b["from_user"]["id"] == str(self.member_user.id))
+        
+        self.assertEqual(admin_debt["to_user"]["id"], str(self.owner_user.id))
+        self.assertEqual(admin_debt["amount"], "30.00")
+        
+        self.assertEqual(member_debt["to_user"]["id"], str(self.owner_user.id))
+        self.assertEqual(member_debt["amount"], "30.00")
+
+        # 2. Test group balance explanation endpoint
+        explanation_url = reverse('group-balance-explanation', kwargs={'id': self.group.id})
+        # member to owner perspective: member owes owner 30
+        response = self.client.get(explanation_url, {
+            'from_user_id': str(self.member_user.id),
+            'to_user_id': str(self.owner_user.id)
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["balance"], "30.00")
+        self.assertEqual(len(response.data["expense_breakdown"]), 1)
+        self.assertEqual(response.data["expense_breakdown"][0]["expense_id"], str(expense.id))
+        self.assertEqual(response.data["expense_breakdown"][0]["amount"], "30.00")
+
+        # 3. Test explanation endpoint missing params
+        response = self.client.get(explanation_url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 4. Test explanation endpoint invalid UUID
+        response = self.client.get(explanation_url, {
+            'from_user_id': 'invalid-uuid',
+            'to_user_id': str(self.owner_user.id)
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

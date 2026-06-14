@@ -12,7 +12,35 @@ from .serializers import CreateExpenseSerializer, ExpenseSerializer
 from .permissions import IsGroupMember
 
 class CreateExpenseView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsGroupMember]
+
+    def get(self, request):
+        group_id = request.query_params.get('group_id')
+        if not group_id:
+            return Response({"detail": "group_id query parameter is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check active membership
+        from groups.models import Membership
+        is_member = Membership.objects.filter(
+            group_id=group_id,
+            user=request.user,
+            left_at__isnull=True
+        ).exists()
+        if not is_member:
+            return Response({"detail": "You do not have access to this group's expenses."}, status=status.HTTP_403_FORBIDDEN)
+
+        expenses = Expense.objects.filter(
+            group_id=group_id,
+            is_deleted=False
+        ).select_related(
+            'created_by',
+            'group'
+        ).prefetch_related(
+            'contributions__user',
+            'splits__user'
+        )
+        serializer = ExpenseSerializer(expenses, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
         serializer = CreateExpenseSerializer(data=request.data)
