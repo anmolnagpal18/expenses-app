@@ -4,6 +4,6 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 
 ## Commits Checklist
 
-- [ ] `docs: initial setup of AI_CONTEXT.md and COMMIT_PLAN.md`
-- [ ] `docs: update AI_CONTEXT with Product Goals, Personas, and Success Criteria`
+- [x] `docs: initial setup of AI_CONTEXT.md and COMMIT_PLAN.md`
+- [x] `docs: update AI_CONTEXT with product discovery and domain model decisions`
 - [ ] *Additional commits will be planned as we define the scope, decisions, and codebase setup.*

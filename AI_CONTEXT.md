@@ -64,12 +64,57 @@ A Shared Expense Management Application similar to Splitwise, developed as a Sof
 ---
 
 ## 2. Product Scope & Features
-*Details of scope and specific feature decisions will be populated as we continue the interview process.*
+
+### Core Entities & Domain Decisions
+
+#### A. Dynamic Group Memberships
+- **Join/Leave Date Logic (Option A):** 
+  - Every membership record contains `joined_at` and `left_at` (nullable).
+  - A member can only participate in expenses whose transaction date falls within their active membership period.
+  - **Backend Enforcement:** Mandatory backend validation to reject expenses outside a user's active membership period.
+- **Leaving with Non-Zero Balances:**
+  - Allowed. Inactive members can leave with non-zero balances.
+  - The debt continues to exist, and balances are calculated using historical expenses and settlements.
+  - Inactive users are excluded from *future* expenses but remain part of past balance calculations.
+- **Re-joining:**
+  - Allowed. A user can leave and rejoin the same group later, creating multiple active membership periods (multiple records in the database).
+
+#### B. Expense Models & Splits
+- **All Expenses in Groups:** Every expense must belong to a group. Direct one-to-one expenses outside a group are out of scope.
+- **Multiple Payers:** Supported. An expense can be paid by multiple people.
+  - *Structure:* Tracked via an `ExpenseContribution` model (who paid what portion) rather than a single `paid_by` field.
+- **Supported Split Types:**
+  1. **Equal Split:** Calculated evenly among all split participants.
+  2. **Percentage Split:** Split specified as percentages (must sum to 100%).
+  3. **Exact Amount Split:** Split specified as exact amounts (must sum to total expense amount).
+  4. **Shares/Ratio Split:** Split specified in shares/ratios (total shares calculated dynamically).
+  - *Extensibility:* The database schema must use a flexible design (e.g., `Expense`, `ExpenseSplit`, `SplitStrategy`) to support new split types.
+
+#### C. Settlements
+- **Data Representation:** Separate entity from `Expense`.
+  - fields: `from_user`, `to_user`, `amount`, `currency`, `settlement_date`, `group`.
+- **Validation Rules:**
+  - Positive amounts only.
+  - Exactly one payer (`from_user`) and one receiver (`to_user`).
+  - No split strategies or distributions.
+  - Cannot reference inactive users at the time of settlement date (cannot settle if outside active membership period).
+  - Must belong to a group.
+- **Verification Workflow:**
+  - No approval workflow required; settles immediately affect balances.
+  - Triggers recalculation, adds to history, and logs to audit.
+
+#### D. Balance Rules
+1. **Zero-Sum:** Group balances must always sum to zero (`Total Credits = Total Debits`).
+2. **Historical Persistence:** Historical expenses remain valid even after a member leaves.
+3. **Period Boundaries:** Membership periods only affect future participation.
+4. **Settlement Modification:** Settlements reduce balances but never modify expense history.
+5. **Pre-conversion:** Currency conversion should occur before balance calculations.
+6. **Traceability:** Every balance must be traceable to underlying expenses and settlements.
 
 ---
 
 ## 3. Architecture & Technical Decisions
-*To be designed and approved in later phases.*
+*To be detailed after we complete the requirements interview.*
 
 ---
 
