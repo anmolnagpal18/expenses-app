@@ -28,6 +28,7 @@ class ImportBatch(models.Model):
         default='PENDING'
     )
     total_rows = models.IntegerField(default=0)
+    import_summary = models.JSONField(default=dict, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     approved_at = models.DateTimeField(null=True, blank=True)
 
@@ -155,6 +156,7 @@ class ImportResolution(models.Model):
         choices=ACTION_CHOICES
     )
     notes = models.TextField(null=True, blank=True)
+    resolution_details = models.JSONField(default=dict, blank=True)
     resolved_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
