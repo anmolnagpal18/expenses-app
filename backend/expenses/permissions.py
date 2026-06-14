@@ -1,5 +1,6 @@
 from rest_framework import permissions
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from groups.repositories import MembershipRepository
 from .models import Expense
 
@@ -18,7 +19,7 @@ class IsGroupMember(permissions.BasePermission):
             try:
                 expense = Expense.objects.only('group_id').get(pk=expense_id)
                 group_id = expense.group_id
-            except (Expense.DoesNotExist, ValueError):
+            except (Expense.DoesNotExist, ValueError, ValidationError):
                 return False
         else:
             group_id = request.data.get('group_id')

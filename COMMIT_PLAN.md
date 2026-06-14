@@ -27,6 +27,8 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 - [x] `feat(expenses): implement expense creation service and split engine`
 - [x] `test(expenses): add split engine and expense service coverage`
 - [x] `feat(expenses): implement expense creation APIs and serializers`
+- [x] `test(expenses): add expense API coverage`
+
 
 ### Phase 4: Balance Calculation Engine
 - [ ] `feat: implement bilateral balance calculation service (zero-sum, no simplify)`

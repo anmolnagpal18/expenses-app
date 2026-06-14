@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal
 
 from .models import Expense
+from .repositories import ExpenseRepository
 from .services import ExpenseService
 from .serializers import CreateExpenseSerializer, ExpenseSerializer
 from .permissions import IsGroupMember
@@ -67,18 +68,8 @@ class ExpenseDetailView(APIView):
     permission_classes = [IsAuthenticated, IsGroupMember]
 
     def get(self, request, id):
-        try:
-            # Optimize query mapping to fetch all nested detail fields (DRF serializers need them)
-            expense = Expense.objects.filter(is_deleted=False).select_related(
-                'created_by',
-                'group',
-                'group__created_by'
-            ).prefetch_related(
-                'contributions__user',
-                'splits__user',
-                'group__memberships__user'
-            ).get(pk=id)
-        except (Expense.DoesNotExist, ValidationError):
+        expense = ExpenseRepository.get_active_expense_detail(id)
+        if not expense:
             return Response({"detail": "Expense not found."}, status=status.HTTP_404_NOT_FOUND)
             
         serializer = ExpenseSerializer(expense)

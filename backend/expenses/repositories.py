@@ -9,6 +9,21 @@ class ExpenseRepository:
             return None
 
     @staticmethod
+    def get_active_expense_detail(expense_id):
+        try:
+            return Expense.objects.filter(is_deleted=False).select_related(
+                'created_by',
+                'group',
+                'group__created_by'
+            ).prefetch_related(
+                'contributions__user',
+                'splits__user',
+                'group__memberships__user'
+            ).get(pk=expense_id)
+        except (Expense.DoesNotExist, ValueError):
+            return None
+
+    @staticmethod
     def get_group_expenses(group_id, include_deleted=False):
         qs = Expense.objects.filter(group_id=group_id)
         if not include_deleted:

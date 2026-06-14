@@ -8,7 +8,7 @@ from .models import Expense, ExpenseContribution, ExpenseSplit
 User = get_user_model()
 
 class ExpenseContributionInputSerializer(serializers.Serializer):
-    user_id = serializers.UUIDField()
+    user_id = serializers.IntegerField()
     amount_paid = serializers.DecimalField(max_digits=12, decimal_places=2)
 
     def validate_user_id(self, value):
@@ -22,7 +22,7 @@ class ExpenseContributionInputSerializer(serializers.Serializer):
         return value
 
 class ExpenseSplitInputSerializer(serializers.Serializer):
-    user_id = serializers.UUIDField()
+    user_id = serializers.IntegerField()
     split_input_value = serializers.DecimalField(
         max_digits=12,
         decimal_places=2,
