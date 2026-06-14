@@ -41,8 +41,10 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 - [x] `test(imports): staging model coverage`
 - [x] `feat(imports): CSV upload and parser`
 - [x] `test(imports): parser coverage`
-- [ ] `feat(imports): anomaly detection engine`
-- [ ] `test(imports): anomaly detection coverage`
+- [x] `feat(imports): anomaly detection engine`
+- [x] `test(imports): anomaly detection coverage`
+- [x] `feat(imports): anomaly resolution workflow`
+- [x] `test(imports): resolution workflow coverage`
 
 ### Phase 6: System Reporting & Audit Logs
 - [ ] `feat: implement audit logging hook and DB logger service`
