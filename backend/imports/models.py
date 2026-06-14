@@ -27,6 +27,7 @@ class ImportBatch(models.Model):
         choices=STATUS_CHOICES,
         default='PENDING'
     )
+    total_rows = models.IntegerField(default=0)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     approved_at = models.DateTimeField(null=True, blank=True)
 
@@ -85,6 +86,7 @@ class ImportAnomaly(models.Model):
         ('INVALID_CURRENCY', 'Invalid Currency'),
         ('NEGATIVE_AMOUNT', 'Negative Amount'),
         ('SETTLEMENT_AS_EXPENSE', 'Settlement as Expense'),
+        ('MISSING_HEADERS', 'Missing Headers'),
     )
 
     SEVERITY_CHOICES = (
@@ -102,7 +104,9 @@ class ImportAnomaly(models.Model):
     row = models.ForeignKey(
         ImportRow,
         on_delete=models.CASCADE,
-        related_name='anomalies'
+        related_name='anomalies',
+        null=True,
+        blank=True
     )
     anomaly_type = models.CharField(
         max_length=50,
@@ -120,7 +124,8 @@ class ImportAnomaly(models.Model):
         verbose_name_plural = 'Import Anomalies'
 
     def __str__(self):
-        return f"{self.anomaly_type} ({self.severity}) on Row {self.row.row_number}"
+        row_num = self.row.row_number if self.row else 'Batch'
+        return f"{self.anomaly_type} ({self.severity}) on Row {row_num}"
 
 class ImportResolution(models.Model):
     ACTION_CHOICES = (
@@ -155,4 +160,5 @@ class ImportResolution(models.Model):
         verbose_name_plural = 'Import Resolutions'
 
     def __str__(self):
-        return f"Resolution for {self.anomaly.anomaly_type} on Row {self.anomaly.row.row_number}"
+        row_num = self.anomaly.row.row_number if self.anomaly.row else 'Batch'
+        return f"Resolution for {self.anomaly.anomaly_type} on Row {row_num}"

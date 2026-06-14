@@ -24,4 +24,5 @@ urlpatterns = [
     path('api/groups/', include('groups.urls')),
     path('api/expenses/', include('expenses.urls')),
     path('api/settlements/', include(settlement_urlpatterns)),
+    path('api/imports/', include('imports.urls')),
 ]
