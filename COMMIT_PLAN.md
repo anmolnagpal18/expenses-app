@@ -13,8 +13,8 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 
 ### Phase 2: Django Backend Foundation
 - [x] `chore: initialize django project structure and postgres config`
-- [ ] `feat(users): add custom user model`
-- [ ] `feat: implement user registration, login, and JWT endpoints`
+- [x] `feat(users): implement custom user model and authentication foundation`
+- [ ] `test(auth): authentication API test coverage`
 - [ ] `feat: implement group and membership model with join/leave validations`
 - [ ] `feat(groups): implement group roles and permissions`
 - [ ] `test: unit tests for membership overlapping and boundary validations`
