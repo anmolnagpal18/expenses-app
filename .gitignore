@@ -52,3 +52,12 @@ venv.bak/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test Coverage
+.coverage
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+.cache
+.pytest_cache/
