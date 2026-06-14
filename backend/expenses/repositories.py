@@ -1,4 +1,4 @@
-from .models import Expense, Settlement, StaticExchangeRate, BalanceSnapshot
+from .models import Expense, Settlement, StaticExchangeRate, BalanceSnapshot, ExpenseContribution, ExpenseSplit
 
 class ExpenseRepository:
     @staticmethod
@@ -14,6 +14,28 @@ class ExpenseRepository:
         if not include_deleted:
             qs = qs.filter(is_deleted=False)
         return qs
+
+    @staticmethod
+    def create_contribution(expense, user, amount_paid):
+        return ExpenseContribution.objects.create(
+            expense=expense,
+            user=user,
+            amount_paid=amount_paid
+        )
+
+    @staticmethod
+    def create_split(expense, user, share_value, amount_owed):
+        return ExpenseSplit.objects.create(
+            expense=expense,
+            user=user,
+            share_value=share_value,
+            amount_owed=amount_owed
+        )
+
+    @staticmethod
+    def get_active_membership(group_id, user_id, target_date):
+        from groups.repositories import MembershipRepository
+        return MembershipRepository.get_active_membership_at(group_id, user_id, target_date)
 
 class SettlementRepository:
     @staticmethod

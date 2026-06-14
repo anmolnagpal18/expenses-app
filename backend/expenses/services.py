@@ -1,6 +1,7 @@
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from decimal import Decimal, ROUND_HALF_UP
 from .models import Expense, Settlement, StaticExchangeRate
 from .repositories import ExpenseRepository, SettlementRepository, ExchangeRateRepository
 
@@ -11,7 +12,6 @@ class ExchangeRateService:
         Converts amount from from_currency to to_currency using static rates.
         Returns a tuple: (converted_amount, exchange_rate)
         """
-        from decimal import Decimal
         if not isinstance(amount, Decimal):
             amount = Decimal(str(amount))
 
@@ -22,18 +22,111 @@ class ExchangeRateService:
         if rate is None:
             raise ValidationError(f"No exchange rate found from {from_currency} to {to_currency}.")
             
-        converted = round(amount * rate, 2)
+        converted = (amount * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         return converted, rate
 
 class ExpenseService:
     @staticmethod
     @transaction.atomic
-    def create_expense(group_id, description, date, original_amount, currency, split_type, created_by, source="MANUAL"):
+    def create_expense(group_id, description, date, original_amount, currency, split_type, created_by, contributors, splits, source="MANUAL"):
         """
-        Skeleton: To be fully implemented in a future commit.
+        Creates an expense record, validating dynamic memberships and executing the split strategy.
         """
-        # Minimal placeholder
-        pass
+        from groups.repositories import GroupRepository
+        from groups.services import MembershipValidationService
+        from .split_strategies import STRATEGY_REGISTRY
+        from datetime import datetime, time
+        from django.contrib.auth import get_user_model
+        
+        group = GroupRepository.get_by_id(group_id)
+        if not group:
+            raise ValidationError("Group does not exist.")
+
+        # Convert date to timezone-aware datetime at start of day for membership checks
+        transaction_dt = timezone.make_aware(datetime.combine(date, time.min))
+
+        # 1. Validate active memberships for expense date
+        User = get_user_model()
+        if created_by:
+            MembershipValidationService.validate_active_membership(group_id, created_by.id, transaction_dt)
+
+        for c in contributors:
+            MembershipValidationService.validate_active_membership(group_id, c['user_id'], transaction_dt)
+
+        strategy = STRATEGY_REGISTRY.get(split_type)
+        if not strategy:
+            raise ValidationError(f"Unsupported split type: {split_type}")
+
+        # Parse splits based on format expected by strategy registry
+        if split_type == 'equal':
+            if isinstance(splits, list):
+                if splits and isinstance(splits[0], dict):
+                    participants_data = [s['user_id'] for s in splits]
+                else:
+                    participants_data = splits
+            elif isinstance(splits, dict):
+                participants_data = list(splits.keys())
+            else:
+                raise ValidationError("Invalid splits format for equal split.")
+        else:
+            if isinstance(splits, list):
+                participants_data = {s['user_id']: s['share_value'] for s in splits}
+            elif isinstance(splits, dict):
+                participants_data = splits
+            else:
+                raise ValidationError("Invalid splits format.")
+
+        for user_id in participants_data:
+            MembershipValidationService.validate_active_membership(group_id, user_id, transaction_dt)
+
+        # 2. Check sum of contributions equals original_amount
+        original_decimal = Decimal(str(original_amount))
+        total_paid = sum(Decimal(str(c['amount_paid'])) for c in contributors)
+        if total_paid != original_decimal:
+            raise ValidationError(f"Total contributions ({total_paid}) must equal original_amount ({original_decimal}).")
+
+        # 3. Resolve exchange rate and converted amount
+        converted_amount, exchange_rate = ExchangeRateService.convert_currency(original_decimal, currency, group.base_currency)
+
+        # 4. Execute split strategy
+        split_results = strategy.calculate_splits(original_decimal, participants_data)
+
+        # 5. Create Expense record
+        expense = Expense.objects.create(
+            group=group,
+            description=description,
+            date=date,
+            original_amount=original_decimal,
+            converted_amount=converted_amount,
+            currency=currency,
+            exchange_rate=exchange_rate,
+            split_type=split_type,
+            created_by=created_by,
+            source=source
+        )
+
+        # 6. Create ExpenseContribution records
+        for c in contributors:
+            user = User.objects.get(pk=c['user_id'])
+            ExpenseRepository.create_contribution(
+                expense=expense,
+                user=user,
+                amount_paid=Decimal(str(c['amount_paid']))
+            )
+
+        # 7. Create ExpenseSplit records
+        for res in split_results:
+            user = User.objects.get(pk=res['user_id'])
+            amount_owed_base = (res['amount_owed'] * exchange_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            
+            ExpenseRepository.create_split(
+                expense=expense,
+                user=user,
+                share_value=res['share_value'],
+                amount_owed=amount_owed_base
+            )
+
+        return expense
 
     @staticmethod
     @transaction.atomic
@@ -41,7 +134,6 @@ class ExpenseService:
         """
         Skeleton: To be fully implemented in a future commit.
         """
-        # Minimal placeholder
         pass
 
     @staticmethod
@@ -65,5 +157,4 @@ class SettlementService:
         """
         Skeleton: To be fully implemented in a future commit.
         """
-        # Minimal placeholder
         pass

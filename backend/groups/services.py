@@ -78,3 +78,22 @@ class MembershipService:
         membership.role = new_role
         membership.save()
         return membership
+
+class MembershipValidationService:
+    @staticmethod
+    def validate_active_membership(group_id, user_id, transaction_date):
+        """
+        Verifies that a user has an active membership in the group on the transaction date/time.
+        Raises ValidationError if not active.
+        """
+        membership = MembershipRepository.get_active_membership_at(group_id, user_id, transaction_date)
+        if not membership:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            try:
+                user = User.objects.get(pk=user_id)
+                email = user.email
+            except User.DoesNotExist:
+                email = f"User ID {user_id}"
+            raise ValidationError(f"User {email} does not have an active membership in the group on {transaction_date.date()}.")
+        return membership

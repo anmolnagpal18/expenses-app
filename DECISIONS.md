@@ -99,3 +99,13 @@ This document records the key architectural and technical decisions made for the
 - **Decision:** Use formal constants/enums for the import workflow: `PENDING`, `UNDER_REVIEW`, `APPROVED`, `REJECTED`, `COMPLETED`, `FAILED`.
 - **Rationale:**
   - Prevents hardcoding raw string values across views, serializers, staging tables, and parser logic, ensuring a robust state machine for files import review.
+
+---
+
+## DR-13: Rounding Discrepancies and Monetary Math Policy
+- **Decision:** Use Python's `Decimal` type with `ROUND_HALF_UP` for all monetary calculations, conversions, and splits. Rounding remainders are explicitly tracked and distributed.
+- **Rationale:**
+  - Python's default float calculations introduce binary representation precision loss (e.g. `0.1 + 0.2 != 0.3`).
+  - Standard Python `round()` uses banker's rounding (rounding to the nearest even number, e.g. `round(2.5) == 2`), which does not align with standard retail/financial rounding expectations.
+  - Using `Decimal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)` guarantees predictable rounding.
+  - When dividing expenses (e.g., dividing ₹100.00 equally among 3 people), the rounding remainder (₹0.01) is calculated (`original_total - sum_of_rounded_shares`) and added to the first participant to maintain zero-sum database integrity.
