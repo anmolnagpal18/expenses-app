@@ -118,6 +118,7 @@ class ImportAnomaly(models.Model):
     )
     description = models.TextField()
     is_resolved = models.BooleanField(default=False)
+    metadata = models.JSONField(default=dict, blank=True)
 
     class Meta:
         verbose_name = 'Import Anomaly'
@@ -126,6 +127,7 @@ class ImportAnomaly(models.Model):
     def __str__(self):
         row_num = self.row.row_number if self.row else 'Batch'
         return f"{self.anomaly_type} ({self.severity}) on Row {row_num}"
+
 
 class ImportResolution(models.Model):
     ACTION_CHOICES = (
