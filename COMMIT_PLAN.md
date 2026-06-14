@@ -23,7 +23,7 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 
 ### Phase 3: Expense Split & Settlement Engines
 - [x] `feat(expenses): implement expense and settlement domain models`
-- [ ] `test(expenses): add expense and settlement model validation coverage`
+- [x] `test(expenses): add expense and settlement model validation coverage`
 - [ ] `feat: implement equal, percentage, exact, and share split strategies`
 - [ ] `test: unit tests for split mathematical validations`
 

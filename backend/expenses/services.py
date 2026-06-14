@@ -11,8 +11,12 @@ class ExchangeRateService:
         Converts amount from from_currency to to_currency using static rates.
         Returns a tuple: (converted_amount, exchange_rate)
         """
+        from decimal import Decimal
+        if not isinstance(amount, Decimal):
+            amount = Decimal(str(amount))
+
         if from_currency == to_currency:
-            return amount, 1.0
+            return amount, Decimal('1.0')
             
         rate = ExchangeRateRepository.get_rate(from_currency, to_currency)
         if rate is None:
