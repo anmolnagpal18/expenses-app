@@ -38,7 +38,7 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 
 ### Phase 5: CSV Import & Anomaly Engine
 - [x] `feat(imports): staging import models`
-- [ ] `test(imports): staging model coverage`
+- [x] `test(imports): staging model coverage`
 - [ ] `feat(imports): CSV parser`
 - [ ] `test(imports): parser coverage`
 - [ ] `feat(imports): anomaly detection engine`

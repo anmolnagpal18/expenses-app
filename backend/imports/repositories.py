@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from .models import ImportBatch, ImportRow, ImportAnomaly, ImportResolution
 
 class ImportBatchRepository:
@@ -5,7 +6,7 @@ class ImportBatchRepository:
     def get_by_id(batch_id):
         try:
             return ImportBatch.objects.get(pk=batch_id)
-        except (ImportBatch.DoesNotExist, ValueError):
+        except (ImportBatch.DoesNotExist, ValueError, ValidationError):
             return None
 
     @staticmethod
@@ -35,7 +36,7 @@ class ImportRowRepository:
     def get_by_id(row_id):
         try:
             return ImportRow.objects.get(pk=row_id)
-        except (ImportRow.DoesNotExist, ValueError):
+        except (ImportRow.DoesNotExist, ValueError, ValidationError):
             return None
 
     @staticmethod
@@ -71,7 +72,7 @@ class ImportAnomalyRepository:
     def get_by_id(anomaly_id):
         try:
             return ImportAnomaly.objects.get(pk=anomaly_id)
-        except (ImportAnomaly.DoesNotExist, ValueError):
+        except (ImportAnomaly.DoesNotExist, ValueError, ValidationError):
             return None
 
     @staticmethod
@@ -102,7 +103,7 @@ class ImportResolutionRepository:
     def get_by_id(resolution_id):
         try:
             return ImportResolution.objects.get(pk=resolution_id)
-        except (ImportResolution.DoesNotExist, ValueError):
+        except (ImportResolution.DoesNotExist, ValueError, ValidationError):
             return None
 
     @staticmethod
@@ -118,5 +119,5 @@ class ImportResolutionRepository:
     def get_anomaly_resolution(anomaly_id):
         try:
             return ImportResolution.objects.get(anomaly_id=anomaly_id)
-        except (ImportResolution.DoesNotExist, ValueError):
+        except (ImportResolution.DoesNotExist, ValueError, ValidationError):
             return None
