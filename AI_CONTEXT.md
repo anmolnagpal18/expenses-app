@@ -316,14 +316,364 @@ A Shared Expense Management Application similar to Splitwise, developed as a Sof
 - **Rate Retention:** Once an expense is saved, its rate and converted amount are frozen.
 
 ---
-
 ### Seed Command Configuration
 - A Django admin seed command creates the default users:
   - Aisha, Rohan, Priya, Meera, Sam, Dev
   - Password: `Password@123`
-  - Seed baseline static conversion rates (USD/EUR/GBP to INR).
+ ## 3. Architecture & Technical Decisions
+
+### System Architecture Diagram
+The system follows a standard decoupled Single Page Application (SPA) architecture. The React frontend communicates with the Django REST Framework (DRF) backend via HTTP/REST using JWT authentication, and the backend is organized around the Service-Repository pattern backed by PostgreSQL.
+
+```mermaid
+graph TD
+    Client["React Frontend (Vite)"] -->|Axios HTTP Requests / JWT| Auth["JWT Auth Middleware"]
+    Auth --> Router["DRF URL Router"]
+    Router --> Views["API Views & Serializers"]
+    Views --> Services["Service Layer (Business Rules)"]
+    Services --> Repositories["Repository Layer (DB Queries)"]
+    Repositories --> DB[("PostgreSQL Database")]
+    Services -->|Validation Rules & Checking| AnomalyEngine["Anomaly Detection Engine"]
+```
+
+---
+
+### ER Diagram
+Below is the Entity-Relationship Diagram outlining the database structure and relations.
+
+```mermaid
+erDiagram
+    USER ||--o{ MEMBERSHIP : "has"
+    USER ||--o{ EXPENSE_CONTRIBUTION : "makes"
+    USER ||--o{ EXPENSE_SPLIT : "assigned"
+    USER ||--o{ SETTLEMENT : "sends"
+    USER ||--o{ SETTLEMENT : "receives"
+    USER ||--o{ IMPORT_BATCH : "uploads"
+    USER ||--o{ IMPORT_RESOLUTION : "resolves"
+    USER ||--o{ AUDIT_LOG : "performs"
+
+    GROUP ||--o{ MEMBERSHIP : "contains"
+    GROUP ||--o{ EXPENSE : "contains"
+    GROUP ||--o{ SETTLEMENT : "contains"
+    GROUP ||--o{ IMPORT_BATCH : "contains"
+
+    EXPENSE ||--o{ EXPENSE_CONTRIBUTION : "paid_by"
+    EXPENSE ||--o{ EXPENSE_SPLIT : "split_among"
+
+    IMPORT_BATCH ||--o{ IMPORT_ROW : "contains"
+    IMPORT_ROW ||--o{ IMPORT_ANOMALY : "flags"
+    IMPORT_ROW ||--o{ IMPORT_RESOLUTION : "resolved_by"
+```
+
+---
+
+### Complete Database Schema (PostgreSQL DDL Reference)
+
+#### `auth_user` (Django Default User Model)
+- Represents application users.
+- Columns:
+  - `id`: INT PRIMARY KEY
+  - `username`: VARCHAR(150) UNIQUE NOT NULL
+  - `email`: VARCHAR(254) NOT NULL
+  - `password`: VARCHAR(128) NOT NULL
+  - `is_active`: BOOLEAN DEFAULT TRUE
+
+#### `groups_group`
+- Groups of users managing expenses together.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `name`: VARCHAR(255) NOT NULL
+  - `base_currency`: VARCHAR(3) DEFAULT 'INR' NOT NULL
+  - `created_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
+
+#### `groups_membership`
+- Tracks membership periods for users in groups, supporting multiple disjoint periods.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `group_id`: UUID FOREIGN KEY REFERENCES groups_group(id) ON DELETE CASCADE
+  - `user_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE
+  - `joined_at`: TIMESTAMPTZ NOT NULL
+  - `left_at`: TIMESTAMPTZ NULL (null indicates currently active)
+  - *Constraints:* Check that `left_at` > `joined_at` if `left_at` is not null.
+
+#### `expenses_staticexchangerate`
+- Stores static exchange rates relative to INR or group base currencies.
+- Columns:
+  - `id`: SERIAL PRIMARY KEY
+  - `from_currency`: VARCHAR(3) NOT NULL
+  - `to_currency`: VARCHAR(3) NOT NULL
+  - `rate`: NUMERIC(10, 4) NOT NULL
+  - *Constraints:* Unique pair (`from_currency`, `to_currency`).
+
+#### `expenses_expense`
+- Base record of an expense within a group.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `group_id`: UUID FOREIGN KEY REFERENCES groups_group(id) ON DELETE CASCADE
+  - `description`: VARCHAR(255) NOT NULL
+  - `date`: DATE NOT NULL
+  - `original_amount`: NUMERIC(12, 2) NOT NULL
+  - `converted_amount`: NUMERIC(12, 2) NOT NULL (converted to base currency)
+  - `currency`: VARCHAR(3) NOT NULL
+  - `exchange_rate`: NUMERIC(10, 4) NOT NULL
+  - `split_type`: VARCHAR(20) NOT NULL (Checks: 'equal', 'percentage', 'exact', 'shares')
+  - `created_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
+
+#### `expenses_expensecontribution`
+- Stores amounts paid by contributors towards an expense (supports multiple payers).
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `expense_id`: UUID FOREIGN KEY REFERENCES expenses_expense(id) ON DELETE CASCADE
+  - `user_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE
+  - `amount_paid`: NUMERIC(12, 2) NOT NULL
+  - *Constraints:* Unique pair (`expense_id`, `user_id`). `amount_paid` > 0.
+
+#### `expenses_expensesplit`
+- Stores shares and resolved amounts owed by participants for an expense.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `expense_id`: UUID FOREIGN KEY REFERENCES expenses_expense(id) ON DELETE CASCADE
+  - `user_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE
+  - `share_value`: NUMERIC(12, 2) NOT NULL (stores percentage, share ratio, or exact amount depending on split_type)
+  - `amount_owed`: NUMERIC(12, 2) NOT NULL (pre-calculated in base currency)
+  - *Constraints:* Unique pair (`expense_id`, `user_id`).
+
+#### `expenses_settlement`
+- Peer-to-peer settlement records.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `group_id`: UUID FOREIGN KEY REFERENCES groups_group(id) ON DELETE CASCADE
+  - `from_user_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE
+  - `to_user_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE
+  - `original_amount`: NUMERIC(12, 2) NOT NULL
+  - `converted_amount`: NUMERIC(12, 2) NOT NULL
+  - `currency`: VARCHAR(3) NOT NULL
+  - `exchange_rate`: NUMERIC(10, 4) NOT NULL
+  - `settlement_date`: DATE NOT NULL
+  - `created_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  - *Constraints:* `from_user_id` != `to_user_id`. `original_amount` > 0.
+
+#### `imports_importbatch`
+- Tracks metadata of uploaded CSV sheets.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `group_id`: UUID FOREIGN KEY REFERENCES groups_group(id) ON DELETE CASCADE
+  - `uploaded_by_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE SET NULL
+  - `status`: VARCHAR(20) DEFAULT 'pending_review' NOT NULL (Checks: 'pending_review', 'completed', 'failed')
+  - `file_name`: VARCHAR(255) NOT NULL
+  - `created_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
+
+#### `imports_importrow`
+- Staged records parsed from CSV columns.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `batch_id`: UUID FOREIGN KEY REFERENCES imports_importbatch(id) ON DELETE CASCADE
+  - `row_index`: INT NOT NULL
+  - `raw_data`: JSONB NOT NULL
+  - `status`: VARCHAR(20) DEFAULT 'pending' NOT NULL (Checks: 'pending', 'resolved', 'ignored')
+
+#### `imports_importanomaly`
+- Anomalies flagged for a staged row.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `row_id`: UUID FOREIGN KEY REFERENCES imports_importrow(id) ON DELETE CASCADE
+  - `anomaly_type`: VARCHAR(50) NOT NULL
+  - `severity`: VARCHAR(10) NOT NULL (Checks: 'high', 'medium', 'low')
+  - `message`: TEXT NOT NULL
+  - `suggested_action`: VARCHAR(100) NOT NULL
+
+#### `imports_importresolution`
+- Resolutions taken on flagged rows.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `row_id`: UUID FOREIGN KEY REFERENCES imports_importrow(id) ON DELETE CASCADE
+  - `action_taken`: VARCHAR(50) NOT NULL (Checks: 'keep_first', 'keep_second', 'keep_both', 'merge', 'map_user', 'create_user', 'convert_settlement', 'override', 'skip_row')
+  - `resolution_details`: JSONB NOT NULL
+  - `resolved_by_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE SET NULL
+  - `timestamp`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
+
+#### `audit_auditlog`
+- Persistent activity audit trails.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `actor_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE SET NULL
+  - `event_type`: VARCHAR(50) NOT NULL
+  - `entity_type`: VARCHAR(50) NOT NULL
+  - `entity_id`: UUID NULL
+  - `old_value`: JSONB NULL
+  - `new_value`: JSONB NULL
+  - `timestamp`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
+
+---
+
+### Django Project Structure
+The backend codebase will be structured cleanly to isolate business logic in a dedicated service layer:
+
+```
+backend/
+├── manage.py
+├── core/
+│   ├── __init__.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+├── users/
+│   ├── __init__.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── views.py
+│   ├── serializers.py
+│   └── urls.py
+├── groups/
+│   ├── __init__.py
+│   ├── apps.py
+│   ├── models.py         # Group, Membership
+│   ├── views.py          # API Controller Layer
+│   ├── services.py       # Membership business logic
+│   ├── repositories.py   # Database query separation
+│   ├── serializers.py    # Request/Response serializing
+│   └── urls.py
+├── expenses/
+│   ├── __init__.py
+│   ├── apps.py
+│   ├── models.py         # Expense, Contribution, Split, Settlement, StaticExchangeRate
+│   ├── views.py          # API Controller Layer
+│   ├── services.py       # Split calculations, Bilateral balances, Conversions
+│   ├── repositories.py   # DB query abstraction
+│   ├── serializers.py
+│   └── urls.py
+├── imports/
+│   ├── __init__.py
+│   ├── apps.py
+│   ├── models.py         # ImportBatch, ImportRow, ImportAnomaly, ImportResolution
+│   ├── views.py          # API Controller Layer
+│   ├── services.py       # Parser, ValidationEngine, ResolutionEngine, Reports
+│   ├── repositories.py
+│   ├── serializers.py
+│   └── urls.py
+└── audit/
+    ├── __init__.py
+    ├── apps.py
+    ├── models.py         # AuditLog
+    ├── services.py       # Logging utility
+    ├── serializers.py
+    └── urls.py
+```
+
+### Django Apps Breakdown
+1. **`users`:** Manages authentication, custom token claims, signups, logins, and seeding user roles.
+2. **`groups`:** Handles group creation, settings (base currency), and active/inactive membership windows (`joined_at`, `left_at`).
+3. **`expenses`:** Contains the primary financial engines—converts currencies using stored exchange rates, validates splits mathematical correctness, executes direct bilateral calculations, and saves expenses/contributions/splits/settlements.
+4. **`imports`:** Handles CSV ingestion, staging tables storage, anomaly classification, interactive row-resolution execution, CSV/PDF report generators, and staging to live data promotion.
+5. **`audit`:** Centrally logs operations, tracking actors, events, timestamps, and detail modifications.
+
+---
+
+### React Folder Structure
+The React frontend (Vite/Tailwind) uses a feature-based structure to organize hooks, API services, and pages:
+
+```
+frontend/
+├── index.html
+├── package.json
+├── vite.config.js
+├── tailwind.config.js
+├── src/
+│   ├── main.jsx
+│   ├── index.css
+│   ├── App.jsx
+│   ├── routes.jsx
+│   ├── assets/
+│   ├── components/
+│   │   ├── ui/           # Generic buttons, inputs, alerts, modals
+│   │   ├── common/       # Navbar, Sidebar, Page Layout
+│   │   └── groups/       # Group Cards, Membership Lists, Timeline Forms
+│   ├── contexts/
+│   │   └── AuthContext.jsx
+│   ├── hooks/
+│   │   ├── useAuth.js
+│   │   └── useDebounce.js
+│   ├── services/
+│   │   ├── api.js        # Axios network configuration with interceptors
+│   │   ├── auth.js
+│   │   ├── groups.js
+│   │   ├── expenses.js
+│   │   └── imports.js
+│   ├── pages/
+│   │   ├── Auth/
+│   │   │   ├── Login.jsx
+│   │   │   └── SignUp.jsx
+│   │   ├── Dashboard/
+│   │   │   └── Dashboard.jsx
+│   │   ├── Groups/
+│   │   │   ├── GroupList.jsx
+│   │   │   └── GroupDetail.jsx
+│   │   ├── Expenses/
+│   │   │   └── ExpenseForm.jsx
+│   │   ├── Imports/
+│   │   │   ├── ImportUpload.jsx
+│   │   │   ├── ImportReview.jsx
+│   │   │   └── ImportReportView.jsx
+│   │   └── Audit/
+│   │       └── AuditLogsList.jsx
+│   └── utils/
+│       ├── formatters.js
+│       └── validators.js
+```
+
+---
+
+### API Architecture (REST Endpoints)
+
+#### A. Authentication (`/api/auth/`)
+- `POST /api/auth/signup/`
+  - *Request:* `{ username, email, password }`
+  - *Response:* `201 Created` - `{ user: { id, username, email } }`
+- `POST /api/auth/login/`
+  - *Request:* `{ username, password }`
+  - *Response:* `200 OK` - `{ access: "JWT_ACCESS", refresh: "JWT_REFRESH" }`
+- `POST /api/auth/token/refresh/`
+  - *Request:* `{ refresh: "JWT_REFRESH" }`
+  - *Response:* `200 OK` - `{ access: "JWT_ACCESS" }`
+
+#### B. Groups & Memberships (`/api/groups/`)
+- `GET /api/groups/` - List user's groups.
+- `POST /api/groups/` - Create group.
+  - *Request:* `{ name, base_currency }`
+- `GET /api/groups/<uuid:id>/` - Retrieve group details, including current memberships.
+- `POST /api/groups/<uuid:id>/members/` - Manage memberships (Add/Remove members).
+  - *Request:* `{ user_id, action: "join" | "leave", timestamp: "ISO_DATETIME" }`
+  - *Response:* `200 OK` or `400 Bad Request` (e.g. invalid dates, overlaps).
+- `GET /api/groups/<uuid:id>/balances/` - Retrieve direct bilateral balances.
+  - *Response:* `200 OK` - `[ { user_a: { id, username }, user_b: { id, username }, balance: -500.00, currency: "INR" } ]` (Alice owes Bob 500).
+
+#### C. Expenses & Settlements (`/api/expenses/` / `/api/settlements/`)
+- `GET /api/groups/<uuid:id>/expenses/` - List group expenses.
+- `POST /api/groups/<uuid:id>/expenses/` - Create expense.
+  - *Request:* `{ description, date, original_amount, currency, split_type, payers: [ { user_id, amount_paid } ], splits: [ { user_id, share_value } ] }`
+  - *Response:* `201 Created` with created expense details.
+- `PUT /api/expenses/<uuid:id>/` - Update expense.
+- `DELETE /api/expenses/<uuid:id>/` - Delete expense.
+- `GET /api/groups/<uuid:id>/settlements/` - List group settlements.
+- `POST /api/groups/<uuid:id>/settlements/` - Create settlement.
+  - *Request:* `{ from_user_id, to_user_id, original_amount, currency, settlement_date }`
+
+#### D. CSV Import Staging & Resolutions (`/api/imports/`)
+- `POST /api/groups/<uuid:id>/imports/` - Upload CSV file.
+  - *Request:* Multipart/form-data with file.
+  - *Response:* `201 Created` - `{ batch_id, status: "pending_review", anomalies_count: 5 }`
+- `GET /api/imports/batches/<uuid:id>/` - Retrieve batch rows, including anomalies.
+- `POST /api/imports/rows/<uuid:row_id>/resolve/` - Submit resolution for a row.
+  - *Request:* `{ action_taken: "map_user" | "merge" | "convert_settlement" | ..., resolution_details: { ... } }`
+- `POST /api/imports/batches/<uuid:id>/commit/` - Approve and commit batch.
+  - *Response:* `200 OK` - Runs transaction, creates expenses/settlements, changes batch to `completed`.
+- `GET /api/imports/batches/<uuid:id>/report/` - Generate import report summary.
+- `GET /api/imports/batches/<uuid:id>/report/download/?format=pdf|csv` - Download report file.
+
+#### E. Audit Logs
+- `GET /api/groups/<uuid:id>/audit-logs/` - Retrieve group audit history.
 
 ---
 
 ## 4. Open Questions & Clarifications
-*To be tracked during the interview.*
+- **Open Questions:** None. Discovery and design phases are complete.
