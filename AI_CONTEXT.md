@@ -113,6 +113,67 @@ A Shared Expense Management Application similar to Splitwise, developed as a Sof
 
 ---
 
+### CSV Import & Anomaly Detection Specifications
+
+#### A. CSV File Structure
+- **Required Columns:** `Date`, `Description`, `Amount`, `Currency`, `Paid By`, `Split Type`, `Participants`, `Split Values`, `Notes`
+- **Optional Columns:** `Category`, `External Reference`, `Import Source`
+- **User Identification:** Users are identified in CSV by name (e.g., Aisha, Rohan). 
+  - *Matching Logic:* 1. Exact match -> 2. Case-insensitive match -> 3. Alias matching -> 4. Flag as "Unknown Member" anomaly.
+  - *Constraint:* No automatic user creation on matching failure.
+
+#### B. Anomaly Definitions & Confidence Signals
+- **Duplicate Expense:** Identical `Date`, `Payer`, `Amount`, `Group`, `Participants`.
+  - *High Confidence:* All fields match exactly.
+  - *Medium Confidence:* Same date, similar description, amount difference < 5%.
+  - *Action:* Flag for review. Never automatically delete.
+- **Conflicting Duplicate Entry:** Appears to represent the same real-world event but with conflicting values (e.g., "Dinner at Marina" ₹2400 vs "Marina Dinner" ₹2450 on the same date).
+  - *Action:* Reviewer chooses Keep A, Keep B, Keep Both, or Merge.
+- **Settlement entered as Expense:** Detects if an expense actually represents debt repayment.
+  - *Signals:* Keywords ("settle", "settlement", "repay", "reimbursement", "transfer", "paid back", "returned", "deposit paid"), only two participants, split pattern/notes implying repayment.
+  - *Action:* Recommend "Convert to Settlement". Reviewer confirms.
+- **Unknown Member:** CSV participant does not map to a database/group user.
+  - *Action:* Reviewer can map to an existing user, create a new user, or skip the row.
+- **Membership Timeline Violation:** Expense date falls outside active membership dates.
+  - *Action:* Flag anomaly. Reviewer can remove member, adjust date, or keep and override.
+- **Invalid Currency:** Currency missing or unsupported.
+  - *Action:* Recommend group default currency (e.g., INR). Reviewer must approve or skip row.
+- **Invalid Date:** Date is unparseable or ambiguous (e.g. `04-05-2026` could be April 5 or May 4).
+  - *Action:* Require review/clarification.
+- **Negative Amount:** Amount is negative (refund, correction, or error).
+  - *Action:* Recommend "Convert to Refund Transaction" or "Keep Negative Expense".
+- **Incorrect Split Configuration:**
+  - Percentage Split: Sum != 100%.
+  - Exact Split: Sum != total amount.
+  - Share Split: Shares are negative or sum to 0.
+  - Equal Split: Participants do not exist.
+  - *Action:* Flag for manual correction.
+
+#### C. Staging Table Workflow (Option A)
+1. **Upload CSV** -> Creates `ImportBatch`.
+2. **Parse Rows** -> Creates `ImportRow` records in staging tables.
+3. **Run Validation Engine** -> Identifies anomalies and creates `ImportAnomaly` records.
+4. **Interactive Review** -> User reviews staging data and selects resolutions. Resolutions are stored in `ImportResolution`.
+5. **Approve Import** -> Converts valid/resolved staging records into live `Expense` and `Settlement` records.
+6. **Generate Reports & Logs** -> Outputs downloadable reports and logs audit events.
+
+#### D. Import Report Deliverables
+- **Format:** Interactive UI view, downloadable PDF, and downloadable CSV.
+- **Contents:**
+  - *Summary:* Import date, uploader, total rows.
+  - *Stats:* Successful rows, failed rows, warning rows, total anomalies found.
+  - *Breakdown:* Count of anomalies by type.
+  - *Resolution Summary:* Log of every anomaly detected and the action taken (who, what, when).
+  - *Status:* Success, Partial Success, or Failed.
+
+#### E. Audit Logs
+- **Storage:** Stored in the database.
+- **Events Logged:** CSV Uploaded, Anomaly Detected, User Mapping, Duplicate Merge, Settlement Conversion, Import Approved, Import Rejected, Expense Created, Settlement Created, Member Added, Member Removed.
+- **Fields:** `id`, `actor`, `event_type`, `entity_type`, `entity_id`, `old_value`, `new_value`, `timestamp`.
+- **Access Control:** Reviewers and Group Owners have full access; regular members have read-only access to audit events affecting their balances.
+
+---
+
 ## 3. Architecture & Technical Decisions
 *To be detailed after we complete the requirements interview.*
 
