@@ -160,10 +160,46 @@ class SettlementService:
     @staticmethod
     @transaction.atomic
     def create_settlement(group_id, from_user_id, to_user_id, original_amount, currency, settlement_date, source="MANUAL"):
-        """
-        Skeleton: To be fully implemented in a future commit.
-        """
-        pass
+        from groups.repositories import GroupRepository
+        from django.contrib.auth import get_user_model
+        
+        group = GroupRepository.get_by_id(group_id)
+        if not group:
+            raise ValidationError("Group does not exist.")
+            
+        User = get_user_model()
+        try:
+            from_user = User.objects.get(pk=from_user_id)
+        except User.DoesNotExist:
+            raise ValidationError("Payer does not exist.")
+            
+        try:
+            to_user = User.objects.get(pk=to_user_id)
+        except User.DoesNotExist:
+            raise ValidationError("Payee does not exist.")
+            
+        original_decimal = Decimal(str(original_amount))
+        
+        # 1. Resolve exchange rate and converted amount
+        converted_amount, exchange_rate = ExchangeRateService.convert_currency(original_decimal, currency, group.base_currency)
+        
+        # 2. Create the settlement (Django will run Settlement.clean() in its save() override)
+        settlement = Settlement.objects.create(
+            group=group,
+            from_user=from_user,
+            to_user=to_user,
+            original_amount=original_decimal,
+            converted_amount=converted_amount,
+            currency=currency,
+            exchange_rate=exchange_rate,
+            settlement_date=settlement_date,
+            source=source
+        )
+        
+        # 3. Refresh balance snapshot
+        BalanceSnapshotService.refresh_group_snapshot(group_id)
+        
+        return settlement
 
 class BalanceSnapshotService:
     @staticmethod

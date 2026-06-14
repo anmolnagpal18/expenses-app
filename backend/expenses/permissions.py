@@ -20,7 +20,12 @@ class IsGroupMember(permissions.BasePermission):
                 expense = Expense.objects.only('group_id').get(pk=expense_id)
                 group_id = expense.group_id
             except (Expense.DoesNotExist, ValueError, ValidationError):
-                return False
+                from .models import Settlement
+                try:
+                    settlement = Settlement.objects.only('group_id').get(pk=expense_id)
+                    group_id = settlement.group_id
+                except (Settlement.DoesNotExist, ValueError, ValidationError):
+                    return False
         else:
             group_id = request.data.get('group_id')
             if not group_id:

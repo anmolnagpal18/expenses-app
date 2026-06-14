@@ -30,19 +30,19 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 - [x] `test(expenses): add expense API coverage`
 
 
-### Phase 4: Balance Calculation Engine
+### Phase 4: Balance Calculation Engine & Settlements
 - [x] `feat(balances): implement bilateral balance calculation engine`
-- [ ] `test(balances): add bilateral balance engine coverage`
+- [x] `test(balances): add bilateral balance engine coverage`
+- [x] `feat(settlements): implement settlement APIs and serializers`
+- [ ] `test(settlements): settlement API coverage`
 
-### Phase 5: CSV Import, Anomaly Engine & Resolutions
-- [ ] `feat: build staging database tables for imports (batches, rows, anomalies)`
-- [ ] `feat(imports): add import state machine`
-- [ ] `feat: implement CSV parsing and basic structure validation`
-- [ ] `feat: build anomaly detection checks (duplicates, timeline violations, unknown members)`
-- [ ] `feat: build anomaly detection checks (settlement patterns, negative amounts, split issues)`
-- [ ] `test: unit tests for parsing and anomaly engine detection accuracy`
-- [ ] `feat: implement staging reviewer resolution actions (mapping, conversions, overrides)`
-- [ ] `feat: implement staging transaction commit (staging to live data promotion)`
+### Phase 5: CSV Import & Anomaly Engine
+- [ ] `feat(imports): staging import models`
+- [ ] `test(imports): staging model coverage`
+- [ ] `feat(imports): CSV parser`
+- [ ] `test(imports): parser coverage`
+- [ ] `feat(imports): anomaly detection engine`
+- [ ] `test(imports): anomaly detection coverage`
 
 ### Phase 6: System Reporting & Audit Logs
 - [ ] `feat: implement audit logging hook and DB logger service`

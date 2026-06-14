@@ -16,10 +16,12 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from expenses.urls import settlement_urlpatterns
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('users.urls')),
     path('api/groups/', include('groups.urls')),
     path('api/expenses/', include('expenses.urls')),
+    path('api/settlements/', include(settlement_urlpatterns)),
 ]

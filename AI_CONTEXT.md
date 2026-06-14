@@ -5,7 +5,7 @@ A Shared Expense Management Application similar to Splitwise, developed as a Sof
 
 ## Document Status
 - **Last Updated:** 2026-06-14
-- **Current Phase:** Backend Development (Expense API Coverage - Commit #18)
+- **Current Phase:** Backend Development (Settlements API - Commit #21)
 
 ---
 
