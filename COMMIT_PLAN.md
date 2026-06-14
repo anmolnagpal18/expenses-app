@@ -15,9 +15,9 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 - [x] `chore: initialize django project structure and postgres config`
 - [x] `feat(users): implement custom user model and authentication foundation`
 - [x] `test(auth): authentication API test coverage`
-- [ ] `feat: implement group and membership model with join/leave validations`
-- [ ] `feat(groups): implement group roles and permissions`
-- [ ] `test: unit tests for membership overlapping and boundary validations`
+- [x] `feat(groups): implement group and membership models`
+- [ ] `test(groups): membership validation coverage`
+- [ ] `feat(groups): group management APIs and serializers`
 - [ ] `feat: implement seed command for default users and exchange rate fixtures`
 
 ### Phase 3: Expense Split & Settlement Engines

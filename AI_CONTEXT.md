@@ -392,6 +392,7 @@ erDiagram
   - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
   - `name`: VARCHAR(255) NOT NULL
   - `base_currency`: VARCHAR(3) DEFAULT 'INR' NOT NULL
+  - `created_by_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE SET NULL
   - `created_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
 
 #### `groups_membership`
