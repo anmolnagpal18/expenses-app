@@ -31,8 +31,8 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 
 
 ### Phase 4: Balance Calculation Engine
-- [ ] `feat: implement bilateral balance calculation service (zero-sum, no simplify)`
-- [ ] `test: unit tests for group and individual balance tracking formulas`
+- [x] `feat(balances): implement bilateral balance calculation engine`
+- [ ] `test(balances): add bilateral balance engine coverage`
 
 ### Phase 5: CSV Import, Anomaly Engine & Resolutions
 - [ ] `feat: build staging database tables for imports (batches, rows, anomalies)`

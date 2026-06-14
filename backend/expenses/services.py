@@ -126,6 +126,9 @@ class ExpenseService:
                 amount_owed=amount_owed_base
             )
 
+        # Refresh the balance snapshot for the group
+        BalanceSnapshotService.refresh_group_snapshot(group_id)
+
         return expense
 
     @staticmethod
@@ -148,6 +151,9 @@ class ExpenseService:
         expense.is_deleted = True
         expense.deleted_at = timezone.now()
         expense.save()
+        
+        # Refresh the balance snapshot for the group
+        BalanceSnapshotService.refresh_group_snapshot(expense.group_id)
         return expense
 
 class SettlementService:
@@ -158,3 +164,44 @@ class SettlementService:
         Skeleton: To be fully implemented in a future commit.
         """
         pass
+
+class BalanceSnapshotService:
+    @staticmethod
+    @transaction.atomic
+    def refresh_group_snapshot(group_id):
+        """
+        Recalculates bilateral balances and updates BalanceSnapshot table for a group.
+        """
+        from groups.models import Group
+        from django.contrib.auth import get_user_model
+        from .models import BalanceSnapshot
+        from .repositories import BalanceSnapshotRepository
+        from .balance_engine import BalanceEngine
+
+        User = get_user_model()
+        group = Group.objects.get(pk=group_id)
+
+        # 1. Compute direct bilateral balances
+        result = BalanceEngine.calculate_group_balances(group_id)
+        balances = result["balances"]
+
+        # 2. Clear existing group snapshot entries
+        BalanceSnapshotRepository.delete_group_snapshots(group_id)
+
+        # 3. Bulk create refreshed snapshots
+        snapshots = []
+        for bal in balances:
+            from_user = User.objects.get(pk=bal["from_user_id"])
+            to_user = User.objects.get(pk=bal["to_user_id"])
+            snapshots.append(
+                BalanceSnapshot(
+                    group=group,
+                    from_user=from_user,
+                    to_user=to_user,
+                    balance=bal["amount"],
+                    calculation_version=1
+                )
+            )
+
+        if snapshots:
+            BalanceSnapshotRepository.bulk_create_snapshots(snapshots)

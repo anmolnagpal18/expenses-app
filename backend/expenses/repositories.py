@@ -31,6 +31,13 @@ class ExpenseRepository:
         return qs
 
     @staticmethod
+    def get_group_expenses_with_relations(group_id):
+        return Expense.objects.filter(group_id=group_id, is_deleted=False).prefetch_related(
+            'contributions',
+            'splits'
+        )
+
+    @staticmethod
     def create_contribution(expense, user, amount_paid):
         return ExpenseContribution.objects.create(
             expense=expense,
@@ -97,3 +104,11 @@ class BalanceSnapshotRepository:
     @staticmethod
     def get_group_snapshots(group_id):
         return BalanceSnapshot.objects.filter(group_id=group_id)
+
+    @staticmethod
+    def delete_group_snapshots(group_id):
+        return BalanceSnapshot.objects.filter(group_id=group_id).delete()
+
+    @staticmethod
+    def bulk_create_snapshots(snapshots):
+        return BalanceSnapshot.objects.bulk_create(snapshots)

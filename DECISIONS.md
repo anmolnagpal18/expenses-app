@@ -88,10 +88,11 @@ This document records the key architectural and technical decisions made for the
 ---
 
 ## DR-11: Balance Snapshot Model
-- **Decision:** Define a `BalanceSnapshot` table (`group`, `user_a`, `user_b`, `balance`, `updated_at`) but calculate balances live for the MVP.
+- **Decision:** Actively compute bilateral balances and cache them in the `BalanceSnapshot` table, incorporating a `calculation_version` field. Direct transaction explanations are built in the calculation pass and stored in-memory for O(1) explanation lookups.
 - **Rationale:**
-  - For performance and scalability, caching calculated bilateral balances in a snapshot table is the standard optimization. 
-  - Preparing this schema now shows forward-looking engineering, even though live calculation is used for the MVP to maintain absolute simplicity.
+  - For performance and scalability, caching calculated bilateral balances in a snapshot table prevents costly recalculations on every dashboard fetch.
+  - Adding `calculation_version` (starting at `1`) provides auditability, making it easy to track which logic version produced a specific snapshot if calculation rules are updated later.
+  - Storing the bidirectional breakdown (expenses and settlements) inside `BalanceEngine`'s calculation pass guarantees traceability and provides fast, pre-allocated explanation paths for technical reviews.
 
 ---
 

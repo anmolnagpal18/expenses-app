@@ -220,6 +220,7 @@ class BalanceSnapshot(models.Model):
         related_name='received_snapshots'
     )
     balance = models.DecimalField(max_digits=12, decimal_places=2)
+    calculation_version = models.IntegerField(default=1)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
