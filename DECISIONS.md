@@ -61,3 +61,41 @@ This document records the key architectural and technical decisions made for the
   - Restricts expense split participation to users whose active membership covers the transaction date.
   - This satisfies the requirement ("Why would March electricity affect my balance?").
   - Validation at the service layer prevents inconsistent splits.
+
+---
+
+## DR-08: Custom User Model
+- **Decision:** Replace Django's default `User` model with a custom `User` inheriting from `AbstractUser` before running any database migrations.
+- **Rationale:** 
+  - The CSV importer relies on matching user names (exact, case-insensitive, or alias matching). 
+  - A custom User model with a `full_name` field and `created_at` timestamp provides clean support for name-matching, custom profile fields, and easier future-proofing of authentication without breaking schema relationships later.
+
+---
+
+## DR-09: Soft Delete for Financial Records
+- **Decision:** Implement soft deletion (using `is_deleted = models.BooleanField(default=False)` and `deleted_at = models.DateTimeField(null=True)`) on core financial entities (`Expense`, `ExpenseContribution`, `ExpenseSplit`, `Settlement`).
+- **Rationale:** 
+  - Financial records must never be permanently deleted from the database in audit-heavy applications.
+  - Soft deletes maintain transaction traceability, allow history retrieval, and provide solid talking points for technical interviews on financial integrity.
+
+---
+
+## DR-10: Group Role System
+- **Decision:** Add a `role` field to the `Membership` model with values: `OWNER`, `ADMIN`, `MEMBER`.
+- **Rationale:**
+  - Establishes a permissions hierarchy required for group management, access controls for sensitive audit logs, and restriction of CSV import approvals to designated group administrators/owners.
+
+---
+
+## DR-11: Balance Snapshot Model
+- **Decision:** Define a `BalanceSnapshot` table (`group`, `user_a`, `user_b`, `balance`, `updated_at`) but calculate balances live for the MVP.
+- **Rationale:**
+  - For performance and scalability, caching calculated bilateral balances in a snapshot table is the standard optimization. 
+  - Preparing this schema now shows forward-looking engineering, even though live calculation is used for the MVP to maintain absolute simplicity.
+
+---
+
+## DR-12: Import Status Enums
+- **Decision:** Use formal constants/enums for the import workflow: `PENDING`, `UNDER_REVIEW`, `APPROVED`, `REJECTED`, `COMPLETED`, `FAILED`.
+- **Rationale:**
+  - Prevents hardcoding raw string values across views, serializers, staging tables, and parser logic, ensuring a robust state machine for files import review.

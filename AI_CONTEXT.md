@@ -78,6 +78,9 @@ A Shared Expense Management Application similar to Splitwise, developed as a Sof
   - Inactive users are excluded from *future* expenses but remain part of past balance calculations.
 - **Re-joining:**
   - Allowed. A user can leave and rejoin the same group later, creating multiple active membership periods (multiple records in the database).
+- **Membership Roles:** 
+  - Every membership is assigned a role: `OWNER`, `ADMIN`, or `MEMBER`.
+  - Permissions control access to group management, CSV import approvals, and administrative audit logs.
 
 #### B. Expense Models & Splits
 - **All Expenses in Groups:** Every expense must belong to a group. Direct one-to-one expenses outside a group are out of scope.
@@ -89,6 +92,7 @@ A Shared Expense Management Application similar to Splitwise, developed as a Sof
   3. **Exact Amount Split:** Split specified as exact amounts (must sum to total expense amount).
   4. **Shares/Ratio Split:** Split specified in shares/ratios (total shares calculated dynamically).
   - *Extensibility:* The database schema must use a flexible design (e.g., `Expense`, `ExpenseSplit`, `SplitStrategy`) to support new split types.
+- **Soft Deletion:** Core financial records are never physically deleted. Deleting an expense flags it as `is_deleted = True` and sets `deleted_at`.
 
 #### C. Settlements
 - **Data Representation:** Separate entity from `Expense`.
@@ -102,6 +106,7 @@ A Shared Expense Management Application similar to Splitwise, developed as a Sof
 - **Verification Workflow:**
   - No approval workflow required; settles immediately affect balances.
   - Triggers recalculation, adds to history, and logs to audit.
+- **Soft Deletion:** Deleting a settlement records flags it as `is_deleted = True` and sets `deleted_at`.
 
 #### D. Balance Rules
 1. **Zero-Sum:** Group balances must always sum to zero (`Total Credits = Total Debits`).
@@ -110,6 +115,7 @@ A Shared Expense Management Application similar to Splitwise, developed as a Sof
 4. **Settlement Modification:** Settlements reduce balances but never modify expense history.
 5. **Pre-conversion:** Currency conversion should occur before balance calculations.
 6. **Traceability:** Every balance must be traceable to underlying expenses and settlements.
+7. **Bilateral Cache Snapshots:** Balances are calculated dynamically for the MVP, but a cached snapshot layout (`BalanceSnapshot`) is maintained to future-proof database scalability.
 
 ---
 
@@ -369,14 +375,16 @@ erDiagram
 
 ### Complete Database Schema (PostgreSQL DDL Reference)
 
-#### `auth_user` (Django Default User Model)
-- Represents application users.
+#### `users_user` (Custom User Model)
+- Extends standard Django `AbstractUser` to support rich profile metadata and name matching.
 - Columns:
-  - `id`: INT PRIMARY KEY
+  - `id`: INT PRIMARY KEY SERIAL
   - `username`: VARCHAR(150) UNIQUE NOT NULL
   - `email`: VARCHAR(254) NOT NULL
   - `password`: VARCHAR(128) NOT NULL
-  - `is_active`: BOOLEAN DEFAULT TRUE
+  - `full_name`: VARCHAR(255) NOT NULL
+  - `created_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  - `is_active`: BOOLEAN DEFAULT TRUE NOT NULL
 
 #### `groups_group`
 - Groups of users managing expenses together.
@@ -387,14 +395,15 @@ erDiagram
   - `created_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
 
 #### `groups_membership`
-- Tracks membership periods for users in groups, supporting multiple disjoint periods.
+- Tracks membership periods and roles for users in groups, supporting multiple disjoint periods.
 - Columns:
   - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
   - `group_id`: UUID FOREIGN KEY REFERENCES groups_group(id) ON DELETE CASCADE
-  - `user_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE
+  - `user_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE CASCADE
   - `joined_at`: TIMESTAMPTZ NOT NULL
   - `left_at`: TIMESTAMPTZ NULL (null indicates currently active)
-  - *Constraints:* Check that `left_at` > `joined_at` if `left_at` is not null.
+  - `role`: VARCHAR(10) DEFAULT 'MEMBER' NOT NULL
+  - *Constraints:* Check that `left_at` > `joined_at` if `left_at` is not null. Check that `role` IN ('OWNER', 'ADMIN', 'MEMBER').
 
 #### `expenses_staticexchangerate`
 - Stores static exchange rates relative to INR or group base currencies.
@@ -406,7 +415,7 @@ erDiagram
   - *Constraints:* Unique pair (`from_currency`, `to_currency`).
 
 #### `expenses_expense`
-- Base record of an expense within a group.
+- Base record of an expense within a group. Supports soft delete.
 - Columns:
   - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
   - `group_id`: UUID FOREIGN KEY REFERENCES groups_group(id) ON DELETE CASCADE
@@ -417,51 +426,71 @@ erDiagram
   - `currency`: VARCHAR(3) NOT NULL
   - `exchange_rate`: NUMERIC(10, 4) NOT NULL
   - `split_type`: VARCHAR(20) NOT NULL (Checks: 'equal', 'percentage', 'exact', 'shares')
+  - `is_deleted`: BOOLEAN DEFAULT FALSE NOT NULL
+  - `deleted_at`: TIMESTAMPTZ NULL
   - `created_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
 
 #### `expenses_expensecontribution`
-- Stores amounts paid by contributors towards an expense (supports multiple payers).
+- Stores amounts paid by contributors towards an expense. Supports soft delete.
 - Columns:
   - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
   - `expense_id`: UUID FOREIGN KEY REFERENCES expenses_expense(id) ON DELETE CASCADE
-  - `user_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE
+  - `user_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE CASCADE
   - `amount_paid`: NUMERIC(12, 2) NOT NULL
-  - *Constraints:* Unique pair (`expense_id`, `user_id`). `amount_paid` > 0.
+  - `is_deleted`: BOOLEAN DEFAULT FALSE NOT NULL
+  - `deleted_at`: TIMESTAMPTZ NULL
+  - *Constraints:* Unique pair (`expense_id`, `user_id`) when `is_deleted` is False. `amount_paid` > 0.
 
 #### `expenses_expensesplit`
-- Stores shares and resolved amounts owed by participants for an expense.
+- Stores shares and resolved amounts owed by participants. Supports soft delete.
 - Columns:
   - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
   - `expense_id`: UUID FOREIGN KEY REFERENCES expenses_expense(id) ON DELETE CASCADE
-  - `user_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE
+  - `user_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE CASCADE
   - `share_value`: NUMERIC(12, 2) NOT NULL (stores percentage, share ratio, or exact amount depending on split_type)
   - `amount_owed`: NUMERIC(12, 2) NOT NULL (pre-calculated in base currency)
-  - *Constraints:* Unique pair (`expense_id`, `user_id`).
+  - `is_deleted`: BOOLEAN DEFAULT FALSE NOT NULL
+  - `deleted_at`: TIMESTAMPTZ NULL
+  - *Constraints:* Unique pair (`expense_id`, `user_id`) when `is_deleted` is False.
 
 #### `expenses_settlement`
-- Peer-to-peer settlement records.
+- Peer-to-peer settlement records. Supports soft delete.
 - Columns:
   - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
   - `group_id`: UUID FOREIGN KEY REFERENCES groups_group(id) ON DELETE CASCADE
-  - `from_user_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE
-  - `to_user_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE
+  - `from_user_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE CASCADE
+  - `to_user_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE CASCADE
   - `original_amount`: NUMERIC(12, 2) NOT NULL
   - `converted_amount`: NUMERIC(12, 2) NOT NULL
   - `currency`: VARCHAR(3) NOT NULL
   - `exchange_rate`: NUMERIC(10, 4) NOT NULL
   - `settlement_date`: DATE NOT NULL
+  - `is_deleted`: BOOLEAN DEFAULT FALSE NOT NULL
+  - `deleted_at`: TIMESTAMPTZ NULL
   - `created_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
   - *Constraints:* `from_user_id` != `to_user_id`. `original_amount` > 0.
 
-#### `imports_importbatch`
-- Tracks metadata of uploaded CSV sheets.
+#### `expenses_balancesnapshot`
+- Future scalability cache snapshot representing peer-to-peer balance for quick loading.
 - Columns:
   - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
   - `group_id`: UUID FOREIGN KEY REFERENCES groups_group(id) ON DELETE CASCADE
-  - `uploaded_by_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE SET NULL
-  - `status`: VARCHAR(20) DEFAULT 'pending_review' NOT NULL (Checks: 'pending_review', 'completed', 'failed')
+  - `user_a_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE CASCADE
+  - `user_b_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE CASCADE
+  - `balance`: NUMERIC(12, 2) NOT NULL
+  - `updated_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  - *Constraints:* Unique combination (`group_id`, `user_a_id`, `user_b_id`). Check `user_a_id` < `user_b_id` (enforces sorted pairs).
+
+#### `imports_importbatch`
+- Tracks metadata of uploaded CSV sheets. Utilizes import status state machine enums.
+- Columns:
+  - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  - `group_id`: UUID FOREIGN KEY REFERENCES groups_group(id) ON DELETE CASCADE
+  - `uploaded_by_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE SET NULL
+  - `status`: VARCHAR(20) DEFAULT 'PENDING' NOT NULL
   - `file_name`: VARCHAR(255) NOT NULL
   - `created_at`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  - *Constraints:* Check `status` IN ('PENDING', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'COMPLETED', 'FAILED').
 
 #### `imports_importrow`
 - Staged records parsed from CSV columns.
@@ -470,7 +499,8 @@ erDiagram
   - `batch_id`: UUID FOREIGN KEY REFERENCES imports_importbatch(id) ON DELETE CASCADE
   - `row_index`: INT NOT NULL
   - `raw_data`: JSONB NOT NULL
-  - `status`: VARCHAR(20) DEFAULT 'pending' NOT NULL (Checks: 'pending', 'resolved', 'ignored')
+  - `status`: VARCHAR(20) DEFAULT 'PENDING' NOT NULL
+  - *Constraints:* Check `status` IN ('PENDING', 'RESOLVED', 'IGNORED').
 
 #### `imports_importanomaly`
 - Anomalies flagged for a staged row.
@@ -489,14 +519,14 @@ erDiagram
   - `row_id`: UUID FOREIGN KEY REFERENCES imports_importrow(id) ON DELETE CASCADE
   - `action_taken`: VARCHAR(50) NOT NULL (Checks: 'keep_first', 'keep_second', 'keep_both', 'merge', 'map_user', 'create_user', 'convert_settlement', 'override', 'skip_row')
   - `resolution_details`: JSONB NOT NULL
-  - `resolved_by_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE SET NULL
+  - `resolved_by_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE SET NULL
   - `timestamp`: TIMESTAMPTZ DEFAULT NOW() NOT NULL
 
 #### `audit_auditlog`
 - Persistent activity audit trails.
 - Columns:
   - `id`: UUID PRIMARY KEY DEFAULT gen_random_uuid()
-  - `actor_id`: INT FOREIGN KEY REFERENCES auth_user(id) ON DELETE SET NULL
+  - `actor_id`: INT FOREIGN KEY REFERENCES users_user(id) ON DELETE SET NULL
   - `event_type`: VARCHAR(50) NOT NULL
   - `entity_type`: VARCHAR(50) NOT NULL
   - `entity_id`: UUID NULL

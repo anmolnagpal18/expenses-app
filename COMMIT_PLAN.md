@@ -13,8 +13,10 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 
 ### Phase 2: Django Backend Foundation
 - [ ] `chore: initialize django project structure and postgres config`
+- [ ] `feat(users): add custom user model`
 - [ ] `feat: implement user registration, login, and JWT endpoints`
 - [ ] `feat: implement group and membership model with join/leave validations`
+- [ ] `feat(groups): implement group roles and permissions`
 - [ ] `test: unit tests for membership overlapping and boundary validations`
 - [ ] `feat: implement seed command for default users and exchange rate fixtures`
 
@@ -23,6 +25,7 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 - [ ] `feat: implement equal, percentage, exact, and share split strategies`
 - [ ] `test: unit tests for split mathematical validations`
 - [ ] `feat: implement separate settlement model with inactive user checks`
+- [ ] `feat(audit): add soft delete support`
 - [ ] `test: unit tests for settlement boundary validations`
 
 ### Phase 4: Balance Calculation Engine
@@ -31,6 +34,7 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 
 ### Phase 5: CSV Import, Anomaly Engine & Resolutions
 - [ ] `feat: build staging database tables for imports (batches, rows, anomalies)`
+- [ ] `feat(imports): add import state machine`
 - [ ] `feat: implement CSV parsing and basic structure validation`
 - [ ] `feat: build anomaly detection checks (duplicates, timeline violations, unknown members)`
 - [ ] `feat: build anomaly detection checks (settlement patterns, negative amounts, split issues)`
