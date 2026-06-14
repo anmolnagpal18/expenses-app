@@ -110,3 +110,14 @@ This document records the key architectural and technical decisions made for the
   - Standard Python `round()` uses banker's rounding (rounding to the nearest even number, e.g. `round(2.5) == 2`), which does not align with standard retail/financial rounding expectations.
   - Using `Decimal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)` guarantees predictable rounding.
   - When dividing expenses (e.g., dividing ₹100.00 equally among 3 people), the rounding remainder (₹0.01) is calculated (`original_total - sum_of_rounded_shares`) and added to the first participant to maintain zero-sum database integrity.
+
+---
+
+## DR-14: Staging Import Models, Auditable Processing Notes, and Resolutions
+- **Decision:** Implement staging models (`ImportBatch`, `ImportRow`, `ImportAnomaly`, `ImportResolution`) with isolated statuses, resolution tracking, and an audit trail of processing notes.
+- **Rationale:**
+  - **Isolated Statuses:** Ensures imported batches do not impact production expense tables or user balances until explicitly approved.
+  - **Processing Notes:** Adding `ImportRow.processing_notes` (JSONField, default list) provides a complete, sequential audit trail of parser and anomaly detection choices (e.g. mapping aliases, duplicate detection rules) for review.
+  - **Resolution Flag:** Adding `ImportAnomaly.is_resolved` (BooleanField, default False) allows rapid, aggregate queries of pending vs resolved anomalies (e.g. "4 of 12 resolved") without executing expensive database joins.
+  - **Action Constraints:** Enforcing specific choice values on `ImportResolution.action_taken` (`IGNORE`, `MERGE`, `MAP_USER`, `CREATE_USER`, `CONVERT_TO_SETTLEMENT`, `KEEP_BOTH`) standardizes resolution tracking and facilitates automated conversion to real transactions.
+
