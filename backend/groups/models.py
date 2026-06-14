@@ -1,8 +1,11 @@
 import uuid
+from datetime import datetime
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+
+FAR_FUTURE = timezone.make_aware(datetime(9999, 12, 31))
 
 class Group(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -43,6 +46,12 @@ class Membership(models.Model):
 
     class Meta:
         ordering = ['joined_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group", "user", "joined_at"],
+                name="unique_membership_period_start"
+            )
+        ]
 
     @property
     def is_active(self):
@@ -62,14 +71,14 @@ class Membership(models.Model):
             qs = qs.exclude(pk=self.pk)
 
         for other in qs:
-            self_end = self.left_at if self.left_at else timezone.make_aware(timezone.datetime.max)
-            other_end = other.left_at if other.left_at else timezone.make_aware(timezone.datetime.max)
+            self_end = self.left_at if self.left_at else FAR_FUTURE
+            other_end = other.left_at if other.left_at else FAR_FUTURE
             
             if not (self_end < other.joined_at or other_end < self.joined_at):
                 raise ValidationError("Membership periods for a user in a group cannot overlap.")
 
         # 3. Enforce that group must have at least one OWNER
-        if self.pk:
+        if not self._state.adding:
             old_instance = Membership.objects.get(pk=self.pk)
             if old_instance.role == 'OWNER' and self.role != 'OWNER':
                 other_owners = Membership.objects.filter(group=self.group, role='OWNER').exclude(pk=self.pk)

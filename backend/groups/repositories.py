@@ -1,5 +1,7 @@
+from datetime import datetime
+from django.db import models
 from django.utils import timezone
-from .models import Group, Membership
+from .models import Group, Membership, FAR_FUTURE
 
 class GroupRepository:
     @staticmethod
@@ -72,10 +74,10 @@ class MembershipRepository:
         # self: [S1, E1]
         # other: [S2, E2]
         # Overlaps if: self_end >= other.joined_at AND other_end >= self.joined_at
-        end_date = left_at if left_at else timezone.make_aware(timezone.datetime.max)
+        end_date = left_at if left_at else FAR_FUTURE
         
         for other in qs:
-            other_end = other.left_at if other.left_at else timezone.make_aware(timezone.datetime.max)
+            other_end = other.left_at if other.left_at else FAR_FUTURE
             if not (end_date < other.joined_at or other_end < joined_at):
                 return True
         return False

@@ -16,7 +16,7 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 - [x] `feat(users): implement custom user model and authentication foundation`
 - [x] `test(auth): authentication API test coverage`
 - [x] `feat(groups): implement group and membership models`
-- [ ] `test(groups): membership validation coverage`
+- [x] `test(groups): membership validation coverage`
 - [ ] `feat(groups): group management APIs and serializers`
 - [ ] `feat: implement seed command for default users and exchange rate fixtures`
 
