@@ -5,7 +5,7 @@ A Shared Expense Management Application similar to Splitwise, developed as a Sof
 
 ## Document Status
 - **Last Updated:** 2026-06-14
-- **Current Phase:** Backend Development (Groups & Memberships)
+- **Current Phase:** Backend Development (Expenses & Settlements)
 
 ---
 

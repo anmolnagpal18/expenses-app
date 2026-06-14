@@ -22,12 +22,10 @@ This file outlines the sequential commit roadmap for the Shared Expense Manageme
 - [ ] `feat: implement seed command for default users and exchange rate fixtures`
 
 ### Phase 3: Expense Split & Settlement Engines
-- [ ] `feat: implement expense, contribution, and split schemas with services`
+- [x] `feat(expenses): implement expense and settlement domain models`
+- [ ] `test(expenses): add expense and settlement model validation coverage`
 - [ ] `feat: implement equal, percentage, exact, and share split strategies`
 - [ ] `test: unit tests for split mathematical validations`
-- [ ] `feat: implement separate settlement model with inactive user checks`
-- [ ] `feat(audit): add soft delete support`
-- [ ] `test: unit tests for settlement boundary validations`
 
 ### Phase 4: Balance Calculation Engine
 - [ ] `feat: implement bilateral balance calculation service (zero-sum, no simplify)`
