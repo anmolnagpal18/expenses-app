@@ -277,7 +277,8 @@ class AnomalyDetectionEngine:
         if anomalies_to_create:
             ImportAnomaly.objects.bulk_create(anomalies_to_create)
 
-        batch.status = "REVIEW_REQUIRED" if rows_flagged > 0 else "PENDING"
+        has_batch_anomalies = ImportAnomaly.objects.filter(batch=batch, row__isnull=True).exists()
+        batch.status = "REVIEW_REQUIRED" if (rows_flagged > 0 or has_batch_anomalies) else "PENDING"
         batch.save(update_fields=["status"])
 
         return {

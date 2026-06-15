@@ -307,9 +307,9 @@ const CSVImport = () => {
               <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Active Batch: {batch.id.substring(0, 8)}</span>
               <h3 className="text-xl font-bold text-white mt-1">Review Staging Row Data</h3>
               <div className="flex flex-wrap gap-4 text-xs text-slate-500 mt-2">
-                <span>Group: <strong className="text-slate-400">{batch.group?.name}</strong></span>
-                <span>Uploaded by: <strong className="text-slate-400">{batch.uploaded_by?.username}</strong></span>
-                <span>File: <strong className="text-slate-400">{batch.filename}</strong></span>
+                <span>Group: <strong className="text-slate-400">{batch.group_name || 'Unknown'}</strong></span>
+                <span>Uploaded by: <strong className="text-slate-400">{batch.uploaded_by_username || 'Unknown'}</strong></span>
+                <span>File: <strong className="text-slate-400">{batch.filename || 'Unknown'}</strong></span>
                 <span>Status: <strong className="text-purple-300 font-bold uppercase">{batch.status}</strong></span>
               </div>
             </div>
@@ -341,6 +341,16 @@ const CSVImport = () => {
             </div>
           </div>
 
+          {batch.anomalies?.filter(a => !a.row).map(anom => (
+            <div key={anom.id} className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl flex items-start space-x-3 text-sm">
+              <AlertCircle size={20} className="mt-0.5 flex-shrink-0 text-rose-400" />
+              <div>
+                <h4 className="font-bold uppercase tracking-wider text-xs">Batch Anomaly: {anom.anomaly_type}</h4>
+                <p className="mt-1 text-slate-300">{anom.description}</p>
+              </div>
+            </div>
+          ))}
+
           {/* Staging Rows Listing */}
           <div className="glass-card overflow-hidden border border-slate-800/80">
             <div className="p-4 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between">
@@ -370,6 +380,9 @@ const CSVImport = () => {
                     
                     return (
                       <tr key={row.id} className={`hover:bg-slate-900/20 ${hasUnresolved ? 'bg-rose-500/5' : ''}`}>
+                        <td className="p-3 font-semibold text-slate-500">
+                          {row.row_number}
+                        </td>
                         <td className="p-3 font-semibold text-slate-300">
                           {row.raw_data?.split_type || row.raw_data?.['split type'] || row.raw_data?.type || 'equal'}
                         </td>

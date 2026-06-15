@@ -60,7 +60,8 @@ class CSVImportService:
                     if matched_header:
                         break
             if not matched_header:
-                missing_required.append(standard_name)
+                if standard_name not in ["split_values", "notes"]:
+                    missing_required.append(standard_name)
             else:
                 header_mapping[standard_name] = matched_header
 

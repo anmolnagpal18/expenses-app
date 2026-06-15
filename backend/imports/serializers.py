@@ -32,7 +32,7 @@ class ImportAnomalySerializer(serializers.ModelSerializer):
     class Meta:
         model = ImportAnomaly
         fields = [
-            'id', 'anomaly_type', 'severity', 'description',
+            'id', 'row', 'anomaly_type', 'severity', 'description',
             'is_resolved', 'metadata', 'resolution'
         ]
 
@@ -51,13 +51,18 @@ class ImportRowSerializer(serializers.ModelSerializer):
 class ImportBatchDetailSerializer(serializers.ModelSerializer):
     rows = ImportRowSerializer(many=True, read_only=True)
     uploaded_by_email = serializers.EmailField(source='uploaded_by.email', read_only=True)
+    group_name = serializers.CharField(source='group.name', read_only=True)
+    uploaded_by_username = serializers.CharField(source='uploaded_by.username', read_only=True)
+    filename = serializers.CharField(source='original_filename', read_only=True)
+    anomalies = ImportAnomalySerializer(many=True, read_only=True)
 
     class Meta:
         model = ImportBatch
         fields = [
             'id', 'group', 'uploaded_by', 'uploaded_by_email',
+            'group_name', 'uploaded_by_username', 'filename',
             'original_filename', 'status', 'total_rows',
-            'import_summary', 'uploaded_at', 'approved_at', 'rows'
+            'import_summary', 'uploaded_at', 'approved_at', 'rows', 'anomalies'
         ]
 
 
