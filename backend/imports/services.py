@@ -7,14 +7,14 @@ from .models import ImportBatch, ImportRow, ImportAnomaly
 
 class CSVImportService:
     CSV_SCHEMA = {
-        "date": ["date", "expense_date"],
+        "date": ["date", "expense_date", "expense date"],
         "description": ["description", "expense", "title"],
         "amount": ["amount", "value"],
         "currency": ["currency"],
         "paid_by": ["paid_by", "paid by", "payer"],
-        "participants": ["participants", "split_between"],
-        "split_type": ["split_type", "split type", "type", "split_strategy"],
-        "split_values": ["split_values", "split values", "shares", "percentages", "values", "split_value"],
+        "participants": ["participants", "split_between", "split between", "split_with", "split with", "members", "split_members", "split members"],
+        "split_type": ["split_type", "split type", "type", "split_strategy", "split strategy"],
+        "split_values": ["split_values", "split values", "shares", "percentages", "values", "split_value", "split value"],
         "notes": ["notes", "comment", "memo"]
     }
 
