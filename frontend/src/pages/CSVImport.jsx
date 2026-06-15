@@ -15,7 +15,8 @@ import {
   ArrowRight,
   UserPlus,
   Link2,
-  Trash
+  Trash,
+  X
 } from 'lucide-react';
 import LoadingPage from '../components/ui/LoadingPage';
 import ErrorState from '../components/ui/ErrorState';
