@@ -273,6 +273,9 @@ class ImportResolutionService:
         if all_resolved:
             has_reject = False
             for a in row_anomalies:
+                if a.anomaly_type in ["NEGATIVE_AMOUNT", "INVALID_SPLIT"]:
+                    has_reject = True
+                    break
                 if hasattr(a, 'resolution') and a.resolution.action_taken in ["IGNORE", "MERGE"]:
                     has_reject = True
                     break
