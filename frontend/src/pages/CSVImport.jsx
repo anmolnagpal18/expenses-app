@@ -62,6 +62,233 @@ const CSVImport = () => {
   // Commit Report Summary State
   const [commitSummary, setCommitSummary] = useState(null);
 
+  const [autoResolving, setAutoResolving] = useState(false);
+  const [autoResolveMessage, setAutoResolveMessage] = useState('');
+
+  const downloadUpdatedCSV = () => {
+    if (!batch?.rows) return;
+    const headers = ["RowNumber", "SplitType", "Date", "Description", "PaidBy", "Participants", "Amount", "Currency", "Status"];
+    const csvRows = [headers.join(",")];
+    batch.rows.forEach(row => {
+      const rowNum = row.row_number;
+      const type = row.raw_data?.split_type || row.raw_data?.type || 'equal';
+      const dateVal = row.raw_data?.date || row.raw_data?.expense_date || '';
+      const desc = `"${(row.raw_data?.description || '').replace(/"/g, '""')}"`;
+      const payer = `"${(row.raw_data?.paid_by || '').replace(/"/g, '""')}"`;
+      const parts = `"${(row.raw_data?.participants || '').replace(/"/g, '""')}"`;
+      const amount = row.raw_data?.amount || row.raw_data?.value || '0.00';
+      const curr = row.raw_data?.currency || 'INR';
+      const status = row.status;
+      csvRows.push([rowNum, type, dateVal, desc, payer, parts, amount, curr, status].join(","));
+    });
+    
+    const csvContent = "data:text/csv;charset=utf-8," + csvRows.join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `updated_staging_${batch.id.substring(0, 8)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadErrorReportPDF = () => {
+    if (!batch) return;
+    const printWindow = window.open('', '_blank');
+    const anomaliesList = [];
+    batch.rows?.forEach(row => {
+      row.anomalies?.forEach(anom => {
+        anomaliesList.push({
+          rowNumber: row.row_number,
+          type: anom.anomaly_type,
+          severity: anom.severity,
+          description: anom.description,
+          resolved: !!anom.resolution,
+          resolutionAction: anom.resolution?.action_taken || ''
+        });
+      });
+    });
+    
+    const html = `
+      <html>
+        <head>
+          <title>CSV Import Error Report - Batch ${batch.id.substring(0, 8)}</title>
+          <style>
+            body { font-family: 'Inter', sans-serif; color: #1e293b; padding: 40px; margin: 0; }
+            h1 { font-size: 24px; font-weight: 800; color: #0f172a; margin-bottom: 5px; }
+            p { font-size: 14px; color: #64748b; margin-top: 0; }
+            .meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 30px 0; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; }
+            .meta-item { font-size: 12px; }
+            .meta-item strong { color: #334155; }
+            .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 40px; }
+            .summary-card { padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; text-align: center; }
+            .summary-card.error { border-color: #fca5a5; background: #fef2f2; }
+            .summary-val { font-size: 20px; font-weight: 700; color: #0f172a; }
+            .summary-label { font-size: 10px; text-transform: uppercase; tracking-wider; color: #64748b; margin-top: 5px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background: #f1f5f9; font-weight: 600; text-align: left; padding: 12px; font-size: 11px; text-transform: uppercase; color: #475569; border-bottom: 2px solid #cbd5e1; }
+            td { padding: 12px; font-size: 12px; border-bottom: 1px solid #e2e8f0; }
+            .badge { display: inline-block; padding: 2px 6px; font-size: 9px; font-weight: 700; border-radius: 4px; text-transform: uppercase; }
+            .badge.error { background: #fee2e2; color: #ef4444; }
+            .badge.warning { background: #fef3c7; color: #d97706; }
+            .badge.resolved { background: #ecfdf5; color: #10b981; }
+          </style>
+        </head>
+        <body>
+          <h1>CSV Import Diagnostics Report</h1>
+          <p>Audit trail and detected anomalies for batch file: ${batch.filename || 'Unknown'}</p>
+          
+          <div class="meta-grid">
+             <div class="meta-item"><strong>Batch ID:</strong> ${batch.id}</div>
+             <div class="meta-item"><strong>Group Name:</strong> ${batch.group_name || 'Unknown'}</div>
+             <div class="meta-item"><strong>Uploaded By:</strong> ${batch.uploaded_by_username || 'Unknown'}</div>
+             <div class="meta-item"><strong>Uploaded At:</strong> ${new Date(batch.uploaded_at).toLocaleString()}</div>
+          </div>
+          
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="summary-val">${batch.total_rows}</div>
+              <div class="summary-label">Total Rows</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-val">${batch.rows?.filter(r => r.status === 'APPROVED').length || 0}</div>
+              <div class="summary-label">Approved Rows</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-val">${batch.rows?.filter(r => r.status === 'FLAGGED').length || 0}</div>
+              <div class="summary-label">Flagged Rows</div>
+            </div>
+            <div class="summary-card error">
+              <div class="summary-val">${anomaliesList.filter(a => !a.resolved).length}</div>
+              <div class="summary-label">Unresolved Issues</div>
+            </div>
+          </div>
+          
+          <h2>Anomaly Details</h2>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 8%">Row</th>
+                <th style="width: 20%">Anomaly Type</th>
+                <th style="width: 12%">Severity</th>
+                <th style="width: 45%">Description</th>
+                <th style="width: 15%">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${anomaliesList.map(a => `
+                <tr>
+                  <td>#${a.rowNumber}</td>
+                  <td><strong>${a.type}</strong></td>
+                  <td>
+                    <span class="badge ${a.severity === 'ERROR' ? 'error' : 'warning'}">${a.severity}</span>
+                  </td>
+                  <td>${a.description}</td>
+                  <td>
+                    <span class="badge ${a.resolved ? 'resolved' : 'error'}">
+                      ${a.resolved ? `Resolved (${a.resolutionAction})` : 'Unresolved'}
+                    </span>
+                  </td>
+                </tr>
+              `).join('')}
+              ${anomaliesList.length === 0 ? '<tr><td colspan="5" style="text-align: center; color: #64748b;">No anomalies detected in this batch.</td></tr>' : ''}
+            </tbody>
+          </table>
+          
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const handleAutoResolve = async () => {
+    if (!batch?.rows) return;
+    
+    const currentGroup = groups?.find(g => g.id === batch.group);
+    const groupMembers = currentGroup?.memberships?.map(m => m.user) || [];
+    
+    setAutoResolving(true);
+    setAutoResolveMessage('Analyzing and resolving staging anomalies...');
+    
+    let resolvedCount = 0;
+    
+    try {
+      const unresolvedAnomalies = [];
+      batch.rows.forEach(row => {
+        row.anomalies?.forEach(anom => {
+          if (!anom.resolution) {
+            unresolvedAnomalies.push({ row, anom });
+          }
+        });
+      });
+      
+      if (unresolvedAnomalies.length === 0) {
+        setAutoResolveMessage('All anomalies are already resolved! Ready to commit.');
+        setTimeout(() => setAutoResolveMessage(''), 3000);
+        setAutoResolving(false);
+        return;
+      }
+      
+      for (const { row, anom } of unresolvedAnomalies) {
+        let action = 'KEEP';
+        let details = {};
+        
+        if (anom.anomaly_type === 'UNKNOWN_MEMBER' || anom.anomaly_type === 'MISSING_MEMBER') {
+          const missingName = anom.metadata?.missing_member || '';
+          const possible = anom.metadata?.possible_matches || [];
+          
+          let mappedUser = null;
+          if (possible.length > 0) {
+            mappedUser = groupMembers.find(member => member.email === possible[0]);
+          }
+          
+          if (mappedUser) {
+            action = 'MAP_USER';
+            details = { user_id: mappedUser.id };
+          } else {
+            action = 'CREATE_USER';
+            const username = missingName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+            details = {
+              username: `${username}_auto`,
+              full_name: missingName,
+              email: `${username}_auto@splitsmart.com`
+            };
+          }
+        } else if (anom.anomaly_type === 'DUPLICATE_EXPENSE' || anom.anomaly_type === 'CONFLICTING_DUPLICATE') {
+          action = 'SKIP';
+        }
+        
+        await resolveAnomalyMutation.mutateAsync({
+          rowId: row.id,
+          payload: {
+            anomaly_id: anom.id,
+            action_taken: action,
+            notes: 'Auto-resolved by Splitsmart Diagnostic engine.',
+            resolution_details: details
+          }
+        });
+        resolvedCount++;
+      }
+      
+      setAutoResolveMessage(`Successfully corrected ${resolvedCount} anomalies! Please recheck and verify.`);
+      setTimeout(() => setAutoResolveMessage(''), 5000);
+      refetchBatch();
+    } catch (err) {
+      console.error(err);
+      setAutoResolveMessage('Failed during auto-resolution.');
+    } finally {
+      setAutoResolving(false);
+    }
+  };
+
   if (groupsLoading) return <LoadingPage />;
 
   const handleFileChange = (e) => {
@@ -302,42 +529,81 @@ const CSVImport = () => {
       {activeBatchId && batch && (
         <div className="space-y-6">
           {/* Staging Status Summary */}
-          <div className="glass-card p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 border-slate-800/80">
-            <div>
-              <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Active Batch: {batch.id.substring(0, 8)}</span>
-              <h3 className="text-xl font-bold text-white mt-1">Review Staging Row Data</h3>
-              <div className="flex flex-wrap gap-4 text-xs text-slate-500 mt-2">
-                <span>Group: <strong className="text-slate-400">{batch.group_name || 'Unknown'}</strong></span>
-                <span>Uploaded by: <strong className="text-slate-400">{batch.uploaded_by_username || 'Unknown'}</strong></span>
-                <span>File: <strong className="text-slate-400">{batch.filename || 'Unknown'}</strong></span>
-                <span>Status: <strong className="text-purple-300 font-bold uppercase">{batch.status}</strong></span>
+          <div className="glass-card p-6 border border-slate-800/80 space-y-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div>
+                <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Active Batch: {batch.id.substring(0, 8)}</span>
+                <h3 className="text-xl font-bold text-white mt-1">Review Staging Row Data</h3>
+                <div className="flex flex-wrap gap-4 text-xs text-slate-500 mt-2">
+                  <span>Group: <strong className="text-slate-400">{batch.group_name || 'Unknown'}</strong></span>
+                  <span>Uploaded by: <strong className="text-slate-400">{batch.uploaded_by_username || 'Unknown'}</strong></span>
+                  <span>File: <strong className="text-slate-400">{batch.filename || 'Unknown'}</strong></span>
+                  <span>Status: <strong className="text-purple-300 font-bold uppercase">{batch.status}</strong></span>
+                </div>
+              </div>
+
+              <div className="flex space-x-3 w-full md:w-auto">
+                <button
+                  onClick={handleDetect}
+                  disabled={detectMutation.isPending}
+                  className="w-1/2 md:w-auto glass-btn-secondary py-2 px-4 text-sm flex items-center justify-center space-x-2"
+                >
+                  <Sparkles size={16} />
+                  <span>{detectMutation.isPending ? 'Detecting...' : 'Run Diagnostics'}</span>
+                </button>
+                <button
+                  onClick={handleCommit}
+                  disabled={commitMutation.isPending}
+                  className="w-1/2 md:w-auto glass-btn-primary py-2 px-4 text-sm flex items-center justify-center space-x-2"
+                >
+                  <Play size={16} />
+                  <span>{commitMutation.isPending ? 'Committing...' : 'Commit Batch'}</span>
+                </button>
+                <button
+                  onClick={() => setActiveBatchId(null)}
+                  className="p-2 border border-slate-800 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-200 transition-colors"
+                  title="Cancel Import"
+                >
+                  <X size={18} />
+                </button>
               </div>
             </div>
 
-            <div className="flex space-x-3 w-full md:w-auto">
-              <button
-                onClick={handleDetect}
-                disabled={detectMutation.isPending}
-                className="w-1/2 md:w-auto glass-btn-secondary py-2 px-4 text-sm flex items-center justify-center space-x-2"
-              >
-                <Sparkles size={16} />
-                <span>{detectMutation.isPending ? 'Detecting...' : 'Run Diagnostics'}</span>
-              </button>
-              <button
-                onClick={handleCommit}
-                disabled={commitMutation.isPending}
-                className="w-1/2 md:w-auto glass-btn-primary py-2 px-4 text-sm flex items-center justify-center space-x-2"
-              >
-                <Play size={16} />
-                <span>{commitMutation.isPending ? 'Committing...' : 'Commit Batch'}</span>
-              </button>
-              <button
-                onClick={() => setActiveBatchId(null)}
-                className="p-2 border border-slate-800 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-200 transition-colors"
-                title="Cancel Import"
-              >
-                <X size={18} />
-              </button>
+            {/* Diagnostic & Export Actions Toolbar */}
+            <div className="pt-4 border-t border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={handleAutoResolve}
+                  disabled={autoResolving}
+                  className="glass-btn-primary bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 py-1.5 px-4 text-xs flex items-center space-x-2"
+                  title="Correct unknown members and duplicate items automatically"
+                >
+                  <Sparkles size={14} className={autoResolving ? "animate-spin" : ""} />
+                  <span>{autoResolving ? 'Auto-Correcting...' : 'Auto-Resolve & Correct'}</span>
+                </button>
+
+                <button
+                  onClick={downloadUpdatedCSV}
+                  className="glass-btn-secondary py-1.5 px-4 text-xs flex items-center space-x-2"
+                  title="Download CSV representing current staging details"
+                >
+                  <FileText size={14} />
+                  <span>Export Corrected CSV</span>
+                </button>
+
+                <button
+                  onClick={downloadErrorReportPDF}
+                  className="glass-btn-secondary py-1.5 px-4 text-xs flex items-center space-x-2 text-rose-400 border-rose-500/20 hover:bg-rose-500/5"
+                  title="Generate print-friendly PDF report of batch errors"
+                >
+                  <AlertCircle size={14} />
+                  <span>PDF Diagnostics Report</span>
+                </button>
+              </div>
+
+              {autoResolveMessage && (
+                <span className="text-xs text-purple-300 font-semibold animate-pulse">{autoResolveMessage}</span>
+              )}
             </div>
           </div>
 
