@@ -140,7 +140,7 @@ class NegativeAmountTests(AnomalyDetectionBase):
         self._set_total_rows(1)
         self._run()
         row.refresh_from_db()
-        self.assertEqual(row.status, "FLAGGED")
+        self.assertEqual(row.status, "REJECTED")
         a = self._anomalies_for(row, "NEGATIVE_AMOUNT").get()
         self.assertEqual(a.severity, "ERROR")
 
@@ -149,7 +149,7 @@ class NegativeAmountTests(AnomalyDetectionBase):
         self._set_total_rows(1)
         self._run()
         row.refresh_from_db()
-        self.assertEqual(row.status, "FLAGGED")
+        self.assertEqual(row.status, "REJECTED")
         self.assertTrue(self._anomalies_for(row, "NEGATIVE_AMOUNT").exists())
 
     def test_non_numeric_amount_flagged(self):
@@ -157,7 +157,7 @@ class NegativeAmountTests(AnomalyDetectionBase):
         self._set_total_rows(1)
         self._run()
         row.refresh_from_db()
-        self.assertEqual(row.status, "FLAGGED")
+        self.assertEqual(row.status, "REJECTED")
 
     def test_positive_amount_no_anomaly(self):
         row = self._make_row(self._clean_row(amount="0.01"))
@@ -355,7 +355,7 @@ class InvalidSplitTests(AnomalyDetectionBase):
         self._set_total_rows(1)
         self._run()
         row.refresh_from_db()
-        self.assertEqual(row.status, "FLAGGED")
+        self.assertEqual(row.status, "REJECTED")
         a = self._anomalies_for(row, "INVALID_SPLIT").get()
         self.assertEqual(a.severity, "ERROR")
         self.assertIn("supplied_split_type", a.metadata)
@@ -415,7 +415,7 @@ class InvalidSplitTests(AnomalyDetectionBase):
         self._set_total_rows(1)
         self._run()
         row.refresh_from_db()
-        self.assertEqual(row.status, "FLAGGED")
+        self.assertEqual(row.status, "REJECTED")
 
     def test_equal_split_no_values_needed(self):
         row = self._make_row(self._clean_row(split_type="equal", split_values=""))
@@ -664,7 +664,8 @@ class StatusTransitionTests(AnomalyDetectionBase):
         self._set_total_rows(2)
         result = self._run()
         self.assertEqual(result["rows_approved"], 1)
-        self.assertEqual(result["rows_flagged"], 1)
+        self.assertEqual(result["rows_flagged"], 0)
+        self.assertEqual(result["rows_rejected"], 1)
         self.assertEqual(result["batch_status"], "REVIEW_REQUIRED")
 
     def test_processing_notes_flagged_row(self):
@@ -673,7 +674,7 @@ class StatusTransitionTests(AnomalyDetectionBase):
         self._run()
         row.refresh_from_db()
         joined = " ".join(row.processing_notes)
-        self.assertIn("Flagged", joined)
+        self.assertIn("Rejected", joined)
         self.assertIn("NEGATIVE_AMOUNT", joined)
 
     def test_processing_notes_approved_row(self):
@@ -688,7 +689,7 @@ class StatusTransitionTests(AnomalyDetectionBase):
         self._make_row(self._clean_row())
         self._set_total_rows(1)
         result = self._run()
-        for key in ("batch_id", "rows_processed", "rows_flagged", "rows_approved",
+        for key in ("batch_id", "rows_processed", "rows_flagged", "rows_approved", "rows_rejected",
                     "anomalies_created", "batch_status"):
             self.assertIn(key, result)
 
@@ -700,7 +701,8 @@ class StatusTransitionTests(AnomalyDetectionBase):
         self._set_total_rows(2)
         result = self._run()
         self.assertEqual(result["rows_processed"], 2)
-        self.assertEqual(result["rows_flagged"], 1)
+        self.assertEqual(result["rows_flagged"], 0)
+        self.assertEqual(result["rows_rejected"], 1)
         self.assertEqual(result["rows_approved"], 1)
         self.assertGreaterEqual(result["anomalies_created"], 1)
 

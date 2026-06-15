@@ -306,7 +306,7 @@ class ImportResolutionService:
             raise ValidationError("Batch not found.")
             
         has_flagged_rows = batch.rows.filter(status="FLAGGED").exists()
-        has_unresolved = batch.anomalies.filter(is_resolved=False).exists()
+        has_unresolved = batch.anomalies.filter(is_resolved=False).exclude(row__status="REJECTED").exists()
         if has_flagged_rows or has_unresolved:
             raise ValidationError("Batch has unresolved anomalies or flagged rows. Review all rows first.")
             
@@ -401,6 +401,68 @@ class ImportResolutionService:
                 
             rows_imported_count += 1
             
+        # We will count why rows were rejected
+        rejected_rows = batch.rows.filter(status="REJECTED")
+        rejected_rows_count = rejected_rows.count()
+        
+        duplicates_removed = 0
+        negative_amount_removed = 0
+        zero_amount_removed = 0
+        invalid_split_removed = 0
+        
+        from .anomaly_engine import _parse_date, _parse_amount, _split_list
+        
+        for r in rejected_rows:
+            anoms = r.anomalies.all()
+            has_dup = any(a.anomaly_type == "DUPLICATE_EXPENSE" for a in anoms)
+            has_invalid_split = any(a.anomaly_type == "INVALID_SPLIT" for a in anoms)
+            has_neg = False
+            has_zero = False
+            
+            for a in anoms:
+                if a.anomaly_type == "NEGATIVE_AMOUNT":
+                    val_str = str(r.raw_data.get("amount") or r.raw_data.get("value") or "").strip()
+                    val = _parse_amount(val_str)
+                    if val is not None:
+                        if val == 0:
+                            has_zero = True
+                        elif val < 0:
+                            has_neg = True
+                    else:
+                        has_neg = True
+            
+            if has_dup:
+                duplicates_removed += 1
+            if has_neg:
+                negative_amount_removed += 1
+            if has_zero:
+                zero_amount_removed += 1
+            if has_invalid_split:
+                invalid_split_removed += 1
+
+        # Count resolved UNKNOWN_MEMBER anomalies
+        resolved_anom_count = batch.anomalies.filter(
+            anomaly_type="UNKNOWN_MEMBER", is_resolved=True
+        ).count()
+        
+        # Count fuzzy matched names across approved rows
+        fuzzy_resolved_names = set()
+        for row in approved_rows:
+            raw = row.raw_data
+            paid_by_raw = str(raw.get("paid_by") or raw.get("paid by") or raw.get("payer") or "").strip()
+            part_raw = str(raw.get("participants") or raw.get("split_between") or "").strip()
+            names = [n for n in _split_list(part_raw) + ([paid_by_raw] if paid_by_raw else []) if n]
+            
+            for name in names:
+                try:
+                    resolved_user = ImportResolutionService.resolve_user_for_name(row, name, batch.group)
+                    if name.strip().lower() != resolved_user.username.lower() and name.strip().lower() != resolved_user.email.lower():
+                        fuzzy_resolved_names.add(name.strip().lower())
+                except Exception:
+                    pass
+                    
+        unknown_members_resolved = resolved_anom_count + len(fuzzy_resolved_names)
+        
         total_anomalies = batch.anomalies.count()
         resolved_anomalies = batch.anomalies.filter(is_resolved=True).count()
         
@@ -408,6 +470,11 @@ class ImportResolutionService:
             "rows_total": batch.total_rows,
             "rows_imported": rows_imported_count,
             "rows_rejected": batch.total_rows - rows_imported_count,
+            "duplicates_removed": duplicates_removed,
+            "negative_amount_removed": negative_amount_removed,
+            "zero_amount_removed": zero_amount_removed,
+            "invalid_split_removed": invalid_split_removed,
+            "unknown_members_resolved": unknown_members_resolved,
             "anomalies_found": total_anomalies,
             "anomalies_resolved": resolved_anomalies
         }

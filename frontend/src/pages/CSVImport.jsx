@@ -120,7 +120,7 @@ const CSVImport = () => {
             .meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 30px 0; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; }
             .meta-item { font-size: 12px; }
             .meta-item strong { color: #334155; }
-            .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 40px; }
+            .summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 40px; }
             .summary-card { padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; text-align: center; }
             .summary-card.error { border-color: #fca5a5; background: #fef2f2; }
             .summary-val { font-size: 20px; font-weight: 700; color: #0f172a; }
@@ -157,6 +157,10 @@ const CSVImport = () => {
             <div class="summary-card">
               <div class="summary-val">${batch.rows?.filter(r => r.status === 'FLAGGED').length || 0}</div>
               <div class="summary-label">Flagged Rows</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-val">${batch.rows?.filter(r => r.status === 'REJECTED').length || 0}</div>
+              <div class="summary-label">Rejected Rows</div>
             </div>
             <div class="summary-card error">
               <div class="summary-val">${anomaliesList.filter(a => !a.resolved).length}</div>
@@ -424,28 +428,54 @@ const CSVImport = () => {
         <div className="glass-card p-6 border-emerald-500/20 bg-emerald-950/10">
           <div className="flex items-center space-x-3 mb-4 text-emerald-400">
             <CheckCircle size={24} />
-            <h3 className="text-lg font-bold">Staging Committed Successfully</h3>
+            <h3 className="text-lg font-bold">Import Summary Report</h3>
           </div>
           <p className="text-sm text-slate-300 mb-6">
-            The CSV batch has been successfully processed, and its transactions have been migrated. Below is the import summary report:
+            The CSV batch has been successfully committed. Below is the transaction migration summary:
           </p>
           
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-900">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase block">Expenses Created</span>
-              <span className="text-2xl font-extrabold text-white">{commitSummary.expenses_created || 0}</span>
+              <span className="text-[10px] text-slate-500 font-semibold uppercase block">Total Rows</span>
+              <span className="text-2xl font-extrabold text-white">{commitSummary.rows_total || 0}</span>
             </div>
             <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-900">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase block">Settlements Created</span>
-              <span className="text-2xl font-extrabold text-white">{commitSummary.settlements_created || 0}</span>
+              <span className="text-[10px] text-slate-500 font-semibold uppercase block">Approved Rows</span>
+              <span className="text-2xl font-extrabold text-white">{commitSummary.rows_imported || 0}</span>
             </div>
             <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-900">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase block">Users Auto-Created</span>
-              <span className="text-2xl font-extrabold text-white">{commitSummary.users_created || 0}</span>
+              <span className="text-[10px] text-slate-500 font-semibold uppercase block">Rejected Rows</span>
+              <span className="text-2xl font-extrabold text-white">{commitSummary.rows_rejected || 0}</span>
             </div>
             <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-900">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase block">Rows Skipped</span>
-              <span className="text-2xl font-extrabold text-white">{commitSummary.rows_skipped || 0}</span>
+              <span className="text-[10px] text-slate-500 font-semibold uppercase block">Transactions Imported</span>
+              <span className="text-2xl font-extrabold text-emerald-400">{commitSummary.rows_imported || 0}</span>
+            </div>
+          </div>
+
+          <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-900/60 space-y-3">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">CSV Cleaning Report</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-300">
+              <div className="flex justify-between p-2 bg-slate-900/40 rounded-lg">
+                <span>Duplicate Expenses Removed:</span>
+                <strong className="text-slate-100">{commitSummary.duplicates_removed || 0}</strong>
+              </div>
+              <div className="flex justify-between p-2 bg-slate-900/40 rounded-lg">
+                <span>Negative Amounts Excluded:</span>
+                <strong className="text-slate-100">{commitSummary.negative_amount_removed || 0}</strong>
+              </div>
+              <div className="flex justify-between p-2 bg-slate-900/40 rounded-lg">
+                <span>Zero Amounts Excluded:</span>
+                <strong className="text-slate-100">{commitSummary.zero_amount_removed || 0}</strong>
+              </div>
+              <div className="flex justify-between p-2 bg-slate-900/40 rounded-lg">
+                <span>Invalid Splits Excluded:</span>
+                <strong className="text-slate-100">{commitSummary.invalid_split_removed || 0}</strong>
+              </div>
+              <div className="flex justify-between p-2 bg-slate-900/40 rounded-lg">
+                <span>Unknown Members Resolved:</span>
+                <strong className="text-purple-300">{commitSummary.unknown_members_resolved || 0}</strong>
+              </div>
             </div>
           </div>
         </div>

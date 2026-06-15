@@ -139,6 +139,10 @@ def _build_member_aliases(user) -> list[str]:
         username = _ascii_fold(email.split("@")[0])
         aliases.add(username)
 
+    username_attr = getattr(user, "username", "") or ""
+    if username_attr:
+        aliases.add(_ascii_fold(username_attr))
+
     for attr in ("full_name", "display_name", "get_full_name"):
         if callable(getattr(user, attr, None)):
             name = user.get_full_name() or ""
@@ -168,29 +172,38 @@ def _fuzzy_match_member(raw_name: str, member_aliases: dict[str, object]) -> Opt
     if normalised in member_aliases:
         return member_aliases[normalised]
 
-    # Try partial: if any member alias is a prefix/suffix of the raw name or vice-versa
     tokens = _name_tokens(raw_name)
     if not tokens:
         return None
 
-    # "Aisha K" -> tokens = ["aisha", "k"] — check if first token matches uniquely
     first_token = tokens[0]
-    last_initial = tokens[-1][0] if len(tokens) > 1 else None
 
+    # Find candidates whose alias first name token matches our first token
     candidates = []
     for alias, user in member_aliases.items():
         alias_tokens = _name_tokens(alias)
         if not alias_tokens:
             continue
         if alias_tokens[0] == first_token:
-            if last_initial is None or (
-                len(alias_tokens) > 1 and alias_tokens[-1].startswith(last_initial)
-            ):
+            if len(tokens) == 1:
+                # CSV has only first name, match any DB member with same first name
                 candidates.append(user)
+            else:
+                # CSV has trailing initial or name
+                if len(alias_tokens) == 1:
+                    # DB member only has first name, we allow if CSV has a single-character initial
+                    if len(tokens[-1]) == 1:
+                        candidates.append(user)
+                else:
+                    # Both have last names/initials
+                    last_token_csv = tokens[-1]
+                    last_token_db = alias_tokens[-1]
+                    if last_token_db.startswith(last_token_csv) or last_token_csv.startswith(last_token_db[0]):
+                        candidates.append(user)
 
-    # Deduplicate by user id
-    seen_ids: set = set()
-    unique: list = []
+    # Deduplicate candidates
+    seen_ids = set()
+    unique = []
     for u in candidates:
         uid = getattr(u, "pk", id(u))
         if uid not in seen_ids:
@@ -252,6 +265,7 @@ class AnomalyDetectionEngine:
         anomalies_to_create: list[ImportAnomaly] = []
         rows_flagged = 0
         rows_approved = 0
+        rows_rejected = 0
 
         self._build_batch_fingerprints(rows)
 
@@ -261,11 +275,28 @@ class AnomalyDetectionEngine:
 
             notes = list(row.processing_notes)
             if row_anomalies:
-                row.status = "FLAGGED"
-                notes.append(f"Flagged: {len(row_anomalies)} anomaly(ies) detected")
+                has_negative = any(a.anomaly_type == "NEGATIVE_AMOUNT" for a in row_anomalies)
+                has_invalid_split = any(a.anomaly_type == "INVALID_SPLIT" for a in row_anomalies)
+
+                if has_negative or has_invalid_split:
+                    row.status = "REJECTED"
+                    if has_negative:
+                        notes.append("Rejected: Negative or zero amount row")
+                    else:
+                        notes.append("Rejected: Invalid split configuration")
+
+                    # Mark these anomalies as resolved immediately so they do not block commits
+                    for a in row_anomalies:
+                        if a.anomaly_type in ["NEGATIVE_AMOUNT", "INVALID_SPLIT"]:
+                            a.is_resolved = True
+                    rows_rejected += 1
+                else:
+                    row.status = "FLAGGED"
+                    notes.append(f"Flagged: {len(row_anomalies)} anomaly(ies) detected")
+                    rows_flagged += 1
+
                 for a in row_anomalies:
                     notes.append(f"  • {a.anomaly_type}: {a.description[:120]}")
-                rows_flagged += 1
             else:
                 row.status = "APPROVED"
                 notes.append("Approved: no anomalies detected")
@@ -278,7 +309,7 @@ class AnomalyDetectionEngine:
             ImportAnomaly.objects.bulk_create(anomalies_to_create)
 
         has_batch_anomalies = ImportAnomaly.objects.filter(batch=batch, row__isnull=True).exists()
-        batch.status = "REVIEW_REQUIRED" if (rows_flagged > 0 or has_batch_anomalies) else "PENDING"
+        batch.status = "REVIEW_REQUIRED" if (rows_flagged > 0 or rows_rejected > 0 or has_batch_anomalies) else "PENDING"
         batch.save(update_fields=["status"])
 
         return {
@@ -286,6 +317,7 @@ class AnomalyDetectionEngine:
             "rows_processed": len(rows),
             "rows_flagged": rows_flagged,
             "rows_approved": rows_approved,
+            "rows_rejected": rows_rejected,
             "anomalies_created": len(anomalies_to_create),
             "batch_status": batch.status,
         }
@@ -293,6 +325,27 @@ class AnomalyDetectionEngine:
     # ------------------------------------------------------------------
     # Context setup
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_description(desc: str) -> str:
+        if not desc:
+            return ""
+        desc = desc.lower().strip()
+        # Remove punctuation
+        desc = re.sub(r"[^\w\s]", " ", desc)
+        # Split into words
+        words = desc.split()
+        # Connector words to strip
+        connectors = {"at", "in", "on", "for", "with", "the", "a", "an", "to", "by", "of", "and", "or", "from", "order"}
+        filtered = [w for w in words if w not in connectors]
+        return " ".join(filtered)
+
+    def _resolve_row_payer(self, rd: dict) -> Optional[object]:
+        paid_by_raw = str(rd.get("paid_by") or rd.get("paid by") or rd.get("payer") or "").strip()
+        if not paid_by_raw:
+            return None
+        pkey = _ascii_fold(paid_by_raw)
+        return self._member_aliases.get(pkey) or _fuzzy_match_member(paid_by_raw, self._member_aliases)
 
     def _setup_context(self, batch: ImportBatch) -> None:
         self._group = batch.group
@@ -316,10 +369,16 @@ class AnomalyDetectionEngine:
             self._valid_currencies.add(rate.to_currency.upper())
 
         # --- Production expenses for duplicate detection ---
-        self._production_expenses = list(
-            Expense.objects.filter(group=self._group, is_deleted=False)
-            .values("date", "description", "original_amount")
-        )
+        self._production_expenses = []
+        for ex in Expense.objects.filter(group=self._group, is_deleted=False).prefetch_related("contributions"):
+            # Find all user IDs who paid for this expense
+            payer_ids = {c.user_id for c in ex.contributions.all() if c.amount_paid > 0}
+            self._production_expenses.append({
+                "date": ex.date,
+                "description": ex.description,
+                "original_amount": ex.original_amount,
+                "payer_ids": payer_ids,
+            })
 
         # --- Rows from prior ImportBatches for the same group ---
         prior_rows = (
@@ -337,14 +396,20 @@ class AnomalyDetectionEngine:
         for row in rows:
             rd = row.raw_data
             exp_date = _parse_date(str(rd.get("date") or rd.get("expense_date") or ""))
-            desc = (rd.get("description") or rd.get("expense") or rd.get("title") or "").strip().lower()
+            desc = (rd.get("description") or rd.get("expense") or rd.get("title") or "").strip()
+            norm_desc = self._normalize_description(desc)
             amount = _parse_amount(str(rd.get("amount") or rd.get("value") or ""))
 
-            if exp_date and desc:
-                desc_key = (str(exp_date), desc)
+            payer_user = self._resolve_row_payer(rd)
+            payer_key = payer_user.pk if payer_user else _ascii_fold(
+                str(rd.get("paid_by") or rd.get("paid by") or rd.get("payer") or "").strip()
+            )
+
+            if exp_date and norm_desc:
+                desc_key = (str(exp_date), norm_desc, payer_key)
                 self._batch_desc_keys.setdefault(desc_key, []).append((amount, row.row_number))
                 if amount is not None:
-                    fp = (str(exp_date), desc, str(amount))
+                    fp = (str(exp_date), norm_desc, str(amount), payer_key)
                     self._batch_fingerprints.setdefault(fp, []).append(row.row_number)
 
     # ------------------------------------------------------------------
@@ -627,87 +692,109 @@ class AnomalyDetectionEngine:
         if not expense_date or not description:
             return []
 
-        date_str  = str(expense_date)
-        desc_lower = description.lower().strip()
+        date_str = str(expense_date)
+        norm_desc = self._normalize_description(description)
+        if not norm_desc:
+            return []
+
+        payer_user = self._resolve_row_payer(row.raw_data)
+        payer_key = payer_user.pk if payer_user else _ascii_fold(
+            str(row.raw_data.get("paid_by") or row.raw_data.get("paid by") or row.raw_data.get("payer") or "").strip()
+        )
 
         # --- A. Production expenses ---
         for ex in self._production_expenses:
-            ex_date  = str(ex["date"])
-            ex_desc  = str(ex["description"]).lower().strip()
-            ex_amt   = Decimal(str(ex["original_amount"]))
-            if ex_date == date_str and ex_desc == desc_lower:
-                if amount is not None and abs(ex_amt - amount) < Decimal("0.01"):
-                    return [ImportAnomaly(
-                        batch=batch, row=row,
-                        anomaly_type="DUPLICATE_EXPENSE", severity="WARNING",
-                        description=(
-                            f"Matches existing production expense: '{description}' "
-                            f"on {expense_date} for {amount}."
-                        ),
-                        is_resolved=False,
-                        metadata={"source": "production", "duplicate_amount": str(amount)},
-                    )]
-                else:
-                    return [ImportAnomaly(
-                        batch=batch, row=row,
-                        anomaly_type="CONFLICTING_DUPLICATE", severity="ERROR",
-                        description=(
-                            f"Same date/description as production expense '{description}' "
-                            f"on {expense_date} but different amount ({amount} vs {ex_amt})."
-                        ),
-                        is_resolved=False,
-                        metadata={
-                            "source": "production",
-                            "existing_amount": str(ex_amt),
-                            "incoming_amount": str(amount),
-                        },
-                    )]
+            ex_date = str(ex["date"])
+            ex_desc = self._normalize_description(str(ex["description"]))
+            ex_amt = Decimal(str(ex["original_amount"]))
+            
+            if ex_date == date_str and ex_desc == norm_desc:
+                payer_match = False
+                if not ex["payer_ids"]:
+                    payer_match = True
+                elif payer_user and payer_user.pk in ex["payer_ids"]:
+                    payer_match = True
+
+                if payer_match:
+                    if amount is not None and abs(ex_amt - amount) < Decimal("0.01"):
+                        return [ImportAnomaly(
+                            batch=batch, row=row,
+                            anomaly_type="DUPLICATE_EXPENSE", severity="WARNING",
+                            description=(
+                                f"Matches existing production expense: '{description}' "
+                                f"on {expense_date} for {amount}."
+                            ),
+                            is_resolved=False,
+                            metadata={"source": "production", "duplicate_amount": str(amount)},
+                        )]
+                    else:
+                        return [ImportAnomaly(
+                            batch=batch, row=row,
+                            anomaly_type="CONFLICTING_DUPLICATE", severity="ERROR",
+                            description=(
+                                f"Same date/description/payer as production expense '{description}' "
+                                f"on {expense_date} but different amount ({amount} vs {ex_amt})."
+                            ),
+                            is_resolved=False,
+                            metadata={
+                                "source": "production",
+                                "existing_amount": str(ex_amt),
+                                "incoming_amount": str(amount),
+                            },
+                        )]
 
         # --- B. Previous ImportBatch rows ---
         for prior in self._prior_batch_rows:
             rd = prior.get("raw_data") or {}
-            p_date  = _parse_date(str(rd.get("date") or rd.get("expense_date") or ""))
-            p_desc  = (rd.get("description") or rd.get("expense") or rd.get("title") or "").strip().lower()
-            p_amt   = _parse_amount(str(rd.get("amount") or rd.get("value") or ""))
-            if p_date and str(p_date) == date_str and p_desc == desc_lower:
-                if amount is not None and p_amt is not None and abs(p_amt - amount) < Decimal("0.01"):
-                    return [ImportAnomaly(
-                        batch=batch, row=row,
-                        anomaly_type="DUPLICATE_EXPENSE", severity="WARNING",
-                        description=(
-                            f"Matches a row from a previous import batch: "
-                            f"'{description}' on {expense_date} for {amount}."
-                        ),
-                        is_resolved=False,
-                        metadata={
-                            "source": "prior_batch",
-                            "prior_batch_id": str(prior.get("batch_id")),
-                            "prior_row_number": prior.get("row_number"),
-                        },
-                    )]
-                else:
-                    return [ImportAnomaly(
-                        batch=batch, row=row,
-                        anomaly_type="CONFLICTING_DUPLICATE", severity="ERROR",
-                        description=(
-                            f"Same date/description as a row in a previous import batch "
-                            f"('{description}' on {expense_date}) but different amount "
-                            f"({amount} vs {p_amt})."
-                        ),
-                        is_resolved=False,
-                        metadata={
-                            "source": "prior_batch",
-                            "prior_batch_id": str(prior.get("batch_id")),
-                            "existing_amount": str(p_amt),
-                            "incoming_amount": str(amount),
-                        },
-                    )]
+            p_date = _parse_date(str(rd.get("date") or rd.get("expense_date") or ""))
+            p_desc = self._normalize_description(str(rd.get("description") or rd.get("expense") or rd.get("title") or ""))
+            p_amt = _parse_amount(str(rd.get("amount") or rd.get("value") or ""))
+            
+            if p_date and str(p_date) == date_str and p_desc == norm_desc:
+                p_payer = self._resolve_row_payer(rd)
+                p_payer_key = p_payer.pk if p_payer else _ascii_fold(
+                    str(rd.get("paid_by") or rd.get("paid by") or rd.get("payer") or "").strip()
+                )
+                
+                if p_payer_key == payer_key:
+                    if amount is not None and p_amt is not None and abs(p_amt - amount) < Decimal("0.01"):
+                        return [ImportAnomaly(
+                            batch=batch, row=row,
+                            anomaly_type="DUPLICATE_EXPENSE", severity="WARNING",
+                            description=(
+                                f"Matches a row from a previous import batch: "
+                                f"'{description}' on {expense_date} for {amount}."
+                            ),
+                            is_resolved=False,
+                            metadata={
+                                "source": "prior_batch",
+                                "prior_batch_id": str(prior.get("batch_id")),
+                                "prior_row_number": prior.get("row_number"),
+                            },
+                        )]
+                    else:
+                        return [ImportAnomaly(
+                            batch=batch, row=row,
+                            anomaly_type="CONFLICTING_DUPLICATE", severity="ERROR",
+                            description=(
+                                f"Same date/description/payer as a row in a previous import batch "
+                                f"('{description}' on {expense_date}) but different amount "
+                                f"({amount} vs {p_amt})."
+                            ),
+                            is_resolved=False,
+                            metadata={
+                                "source": "prior_batch",
+                                "prior_batch_id": str(prior.get("batch_id")),
+                                "existing_amount": str(p_amt),
+                                "incoming_amount": str(amount),
+                            },
+                        )]
 
         # --- C. Intra-batch duplicates ---
         results: list[ImportAnomaly] = []
 
         if amount is not None:
-            fp = (date_str, desc_lower, str(amount))
+            fp = (date_str, norm_desc, str(amount), payer_key)
             matching = self._batch_fingerprints.get(fp, [])
             if len(matching) > 1 and matching[0] != row.row_number:
                 results.append(ImportAnomaly(
@@ -721,7 +808,7 @@ class AnomalyDetectionEngine:
                     metadata={"source": "intra_batch", "duplicate_row": matching[0]},
                 ))
 
-        desc_key = (date_str, desc_lower)
+        desc_key = (date_str, norm_desc, payer_key)
         entries = self._batch_desc_keys.get(desc_key, [])
         if entries and amount is not None and not results:
             conflicting_amounts = [
@@ -734,7 +821,7 @@ class AnomalyDetectionEngine:
                     batch=batch, row=row,
                     anomaly_type="CONFLICTING_DUPLICATE", severity="ERROR",
                     description=(
-                        f"Conflicts with row #{other_rn} in this batch — same date/description "
+                        f"Conflicts with row #{other_rn} in this batch — same date/description/payer "
                         f"'{description}' on {expense_date} but different amount "
                         f"({amount} vs {other_amt})."
                     ),
