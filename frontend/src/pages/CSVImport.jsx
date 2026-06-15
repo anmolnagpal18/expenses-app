@@ -238,7 +238,7 @@ const CSVImport = () => {
       }
       
       for (const { row, anom } of unresolvedAnomalies) {
-        let action = 'KEEP';
+        let action = 'KEEP_BOTH';
         let details = {};
         
         if (anom.anomaly_type === 'UNKNOWN_MEMBER' || anom.anomaly_type === 'MISSING_MEMBER') {
@@ -263,7 +263,7 @@ const CSVImport = () => {
             };
           }
         } else if (anom.anomaly_type === 'DUPLICATE_EXPENSE' || anom.anomaly_type === 'CONFLICTING_DUPLICATE') {
-          action = 'SKIP';
+          action = 'IGNORE';
         }
         
         await resolveAnomalyMutation.mutateAsync({
