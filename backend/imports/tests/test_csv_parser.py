@@ -144,14 +144,14 @@ class CSVParserTests(TestCase):
 
         row_1 = rows[0]
         self.assertEqual(row_1.row_number, 1)
-        self.assertEqual(row_1.raw_data['Description'], 'Breakfast')
-        self.assertEqual(row_1.raw_data['Amount'], '80.00')
+        self.assertEqual(row_1.raw_data['description'], 'Breakfast')
+        self.assertEqual(row_1.raw_data['amount'], '80.00')
         self.assertEqual(row_1.processing_notes, ["CSV parsed successfully"])
 
         row_2 = rows[1]
         self.assertEqual(row_2.row_number, 2)
-        self.assertEqual(row_2.raw_data['Description'], 'Taxi')
-        self.assertEqual(row_2.raw_data['Amount'], '200.00')
+        self.assertEqual(row_2.raw_data['description'], 'Taxi')
+        self.assertEqual(row_2.raw_data['amount'], '200.00')
         self.assertEqual(row_2.processing_notes, ["CSV parsed successfully"])
 
     # --- Edge Cases ---

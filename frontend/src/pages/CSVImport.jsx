@@ -103,8 +103,8 @@ const CSVImport = () => {
           type: anom.anomaly_type,
           severity: anom.severity,
           description: anom.description,
-          resolved: !!anom.resolution,
-          resolutionAction: anom.resolution?.action_taken || ''
+          resolved: anom.is_resolved,
+          resolutionAction: anom.resolution?.action_taken || (anom.is_resolved ? 'Auto-Resolved' : '')
         });
       });
     });
@@ -228,7 +228,7 @@ const CSVImport = () => {
       const unresolvedAnomalies = [];
       batch.rows.forEach(row => {
         row.anomalies?.forEach(anom => {
-          if (!anom.resolution) {
+          if (!anom.is_resolved) {
             unresolvedAnomalies.push({ row, anom });
           }
         });
@@ -672,7 +672,7 @@ const CSVImport = () => {
                 <tbody className="divide-y divide-slate-800/40">
                   {batch.rows?.map((row) => {
                     const rowAnomalies = row.anomalies || [];
-                    const hasUnresolved = rowAnomalies.some(a => !a.resolution);
+                    const hasUnresolved = rowAnomalies.some(a => !a.is_resolved);
                     
                     return (
                       <tr key={row.id} className={`hover:bg-slate-900/20 ${hasUnresolved ? 'bg-rose-500/5' : ''}`}>
@@ -706,6 +706,7 @@ const CSVImport = () => {
                           <span className={`inline-flex px-2 py-0.5 rounded-full font-semibold text-[10px] ${
                             row.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15' :
                             row.status === 'SKIPPED' ? 'bg-slate-800 text-slate-400' :
+                            row.status === 'REJECTED' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/15' :
                             'bg-amber-500/10 text-amber-400 border border-amber-500/15'
                           }`}>
                             {row.status}
@@ -715,7 +716,7 @@ const CSVImport = () => {
                           {rowAnomalies.length > 0 ? (
                             <div className="flex items-center justify-end space-x-2">
                               {rowAnomalies.map((anom) => {
-                                const isResolved = !!anom.resolution;
+                                const isResolved = anom.is_resolved;
                                 return (
                                   <button
                                     key={anom.id}

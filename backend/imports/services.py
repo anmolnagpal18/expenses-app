@@ -84,11 +84,18 @@ class CSVImportService:
         # Parse and store rows
         rows_to_create = []
         for idx, row_dict in enumerate(reader, start=1):
+            normalized_row = {}
+            for std_name, original_header in header_mapping.items():
+                normalized_row[std_name] = (row_dict.get(original_header) or "").strip()
+            # Keep other headers
+            for k, v in row_dict.items():
+                if k and k not in header_mapping.values():
+                    normalized_row[k] = (v or "").strip()
             rows_to_create.append(
                 ImportRow(
                     batch=batch,
                     row_number=idx,
-                    raw_data=row_dict,
+                    raw_data=normalized_row,
                     status='PENDING',
                     processing_notes=["CSV parsed successfully"]
                 )
