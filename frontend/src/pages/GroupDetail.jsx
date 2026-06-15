@@ -408,9 +408,9 @@ const GroupDetail = () => {
                     </div>
                     <div>
                       <div className="flex items-center space-x-2">
-                        <strong className="text-slate-200">{setl.from_user.username}</strong>
+                        <strong className="text-slate-200">{setl.payer?.username || 'Unknown'}</strong>
                         <ArrowRight size={14} className="text-slate-500" />
-                        <strong className="text-slate-200">{setl.to_user.username}</strong>
+                        <strong className="text-slate-200">{setl.receiver?.username || 'Unknown'}</strong>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
                         Settled on {new Date(setl.settlement_date).toLocaleDateString()}
